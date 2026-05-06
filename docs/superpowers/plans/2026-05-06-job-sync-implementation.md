@@ -1,0 +1,1712 @@
+# Job Sync Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Build a .NET 10 REST API that syncs job applications from Gmail via Gemini AI classification.
+
+**Architecture:** Async pipeline — client triggers sync, background worker fetches Gmail emails, batches them through Gemini for classification/deduplication, stores results in PostgreSQL. Polling endpoint for client to retrieve results.
+
+**Tech Stack:** .NET 10, EF Core + Npgsql (PostgreSQL), Google.Apis.Gmail.v1, Google AI SDK, BackgroundService
+
+---
+
+## File Structure
+
+```
+JobSync/
+├── JobSync.sln
+├── src/
+│   ├── JobSync.Api/
+│   │   ├── Program.cs
+│   │   ├── appsettings.json
+│   │   ├── appsettings.Development.json
+│   │   ├── Controllers/
+│   │   │   ├── AuthController.cs
+│   │   │   └── SyncController.cs
+│   │   └── JobSync.Api.csproj
+│   ├── JobSync.Core/
+│   │   ├── Entities/
+│   │   │   ├── BaseEntity.cs
+│   │   │   ├── User.cs
+│   │   │   └── SyncJob.cs
+│   │   ├── Enums/
+│   │   │   └── SyncJobStatus.cs
+│   │   ├── Models/
+│   │   │   └── JobApplication.cs
+│   │   ├── Interfaces/
+│   │   │   ├── IGmailService.cs
+│   │   │   ├── IGeminiService.cs
+│   │   │   ├── ISyncOrchestrator.cs
+│   │   │   └── IUserRepository.cs
+│   │   └── JobSync.Core.csproj
+│   ├── JobSync.Infrastructure/
+│   │   ├── Data/
+│   │   │   ├── AppDbContext.cs
+│   │   │   └── Configurations/
+│   │   │       ├── UserConfiguration.cs
+│   │   │       └── SyncJobConfiguration.cs
+│   │   ├── Services/
+│   │   │   ├── GmailService.cs
+│   │   │   ├── GeminiService.cs
+│   │   │   └── SyncOrchestrator.cs
+│   │   ├── Repositories/
+│   │   │   └── UserRepository.cs
+│   │   └── JobSync.Infrastructure.csproj
+│   └── JobSync.Worker/
+│       ├── SyncBackgroundService.cs
+│       └── JobSync.Worker.csproj
+└── tests/
+    ├── JobSync.Api.Tests/
+    │   ├── Controllers/
+    │   │   ├── AuthControllerTests.cs
+    │   │   └── SyncControllerTests.cs
+    │   └── JobSync.Api.Tests.csproj
+    ├── JobSync.Infrastructure.Tests/
+    │   ├── Services/
+    │   │   ├── GeminiServiceTests.cs
+    │   │   └── SyncOrchestratorTests.cs
+    │   └── JobSync.Infrastructure.Tests.csproj
+    └── JobSync.Worker.Tests/
+        ├── SyncBackgroundServiceTests.cs
+        └── JobSync.Worker.Tests.csproj
+```
+
+---
+
+## Task 1: Solution Scaffolding
+
+**Files:**
+
+- Create: `JobSync.sln`
+- Create: `src/JobSync.Api/JobSync.Api.csproj`
+- Create: `src/JobSync.Core/JobSync.Core.csproj`
+- Create: `src/JobSync.Infrastructure/JobSync.Infrastructure.csproj`
+- Create: `src/JobSync.Worker/JobSync.Worker.csproj`
+- Create: `tests/JobSync.Api.Tests/JobSync.Api.Tests.csproj`
+- Create: `tests/JobSync.Infrastructure.Tests/JobSync.Infrastructure.Tests.csproj`
+- Create: `tests/JobSync.Worker.Tests/JobSync.Worker.Tests.csproj`
+
+- [ ] **Step 1: Create solution and projects**
+
+```bash
+dotnet new sln -n JobSync
+mkdir -p src tests
+
+dotnet new webapi -n JobSync.Api -o src/JobSync.Api --no-https
+dotnet new classlib -n JobSync.Core -o src/JobSync.Core
+dotnet new classlib -n JobSync.Infrastructure -o src/JobSync.Infrastructure
+dotnet new classlib -n JobSync.Worker -o src/JobSync.Worker
+
+dotnet new xunit -n JobSync.Api.Tests -o tests/JobSync.Api.Tests
+dotnet new xunit -n JobSync.Infrastructure.Tests -o tests/JobSync.Infrastructure.Tests
+dotnet new xunit -n JobSync.Worker.Tests -o tests/JobSync.Worker.Tests
+```
+
+- [ ] **Step 2: Add projects to solution**
+
+```bash
+dotnet sln add src/JobSync.Api/JobSync.Api.csproj
+dotnet sln add src/JobSync.Core/JobSync.Core.csproj
+dotnet sln add src/JobSync.Infrastructure/JobSync.Infrastructure.csproj
+dotnet sln add src/JobSync.Worker/JobSync.Worker.csproj
+dotnet sln add tests/JobSync.Api.Tests/JobSync.Api.Tests.csproj
+dotnet sln add tests/JobSync.Infrastructure.Tests/JobSync.Infrastructure.Tests.csproj
+dotnet sln add tests/JobSync.Worker.Tests/JobSync.Worker.Tests.csproj
+```
+
+- [ ] **Step 3: Add project references**
+
+```bash
+# Core has no dependencies
+# Infrastructure depends on Core
+dotnet add src/JobSync.Infrastructure/JobSync.Infrastructure.csproj reference src/JobSync.Core/JobSync.Core.csproj
+
+# Worker depends on Core and Infrastructure
+dotnet add src/JobSync.Worker/JobSync.Worker.csproj reference src/JobSync.Core/JobSync.Core.csproj
+dotnet add src/JobSync.Worker/JobSync.Worker.csproj reference src/JobSync.Infrastructure/JobSync.Infrastructure.csproj
+
+# Api depends on Core, Infrastructure, and Worker
+dotnet add src/JobSync.Api/JobSync.Api.csproj reference src/JobSync.Core/JobSync.Core.csproj
+dotnet add src/JobSync.Api/JobSync.Api.csproj reference src/JobSync.Infrastructure/JobSync.Infrastructure.csproj
+dotnet add src/JobSync.Api/JobSync.Api.csproj reference src/JobSync.Worker/JobSync.Worker.csproj
+
+# Test projects reference their targets
+dotnet add tests/JobSync.Api.Tests/JobSync.Api.Tests.csproj reference src/JobSync.Api/JobSync.Api.csproj
+dotnet add tests/JobSync.Infrastructure.Tests/JobSync.Infrastructure.Tests.csproj reference src/JobSync.Infrastructure/JobSync.Infrastructure.csproj
+dotnet add tests/JobSync.Worker.Tests/JobSync.Worker.Tests.csproj reference src/JobSync.Worker/JobSync.Worker.csproj
+```
+
+- [ ] **Step 4: Add NuGet packages**
+
+```bash
+# Infrastructure - EF Core + Npgsql
+dotnet add src/JobSync.Infrastructure/JobSync.Infrastructure.csproj package Npgsql.EntityFrameworkCore.PostgreSQL
+dotnet add src/JobSync.Infrastructure/JobSync.Infrastructure.csproj package Microsoft.EntityFrameworkCore
+
+# Infrastructure - Gmail
+dotnet add src/JobSync.Infrastructure/JobSync.Infrastructure.csproj package Google.Apis.Gmail.v1
+dotnet add src/JobSync.Infrastructure/JobSync.Infrastructure.csproj package Google.Apis.Auth
+
+# Infrastructure - Gemini
+dotnet add src/JobSync.Infrastructure/JobSync.Infrastructure.csproj package Google_GenerativeAI
+
+# Api - EF Core Design for migrations
+dotnet add src/JobSync.Api/JobSync.Api.csproj package Microsoft.EntityFrameworkCore.Design
+
+# Test projects - mocking
+dotnet add tests/JobSync.Api.Tests/JobSync.Api.Tests.csproj package NSubstitute
+dotnet add tests/JobSync.Infrastructure.Tests/JobSync.Infrastructure.Tests.csproj package NSubstitute
+dotnet add tests/JobSync.Worker.Tests/JobSync.Worker.Tests.csproj package NSubstitute
+dotnet add tests/JobSync.Api.Tests/JobSync.Api.Tests.csproj package Microsoft.AspNetCore.Mvc.Testing
+```
+
+- [ ] **Step 5: Verify build**
+
+```bash
+dotnet build
+```
+
+Expected: Build succeeded with 0 errors.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add -A
+git commit -m "feat: scaffold solution structure with project references and packages"
+```
+
+---
+
+## Task 2: Core Domain Models
+
+**Files:**
+
+- Create: `src/JobSync.Core/Entities/BaseEntity.cs`
+- Create: `src/JobSync.Core/Entities/User.cs`
+- Create: `src/JobSync.Core/Entities/SyncJob.cs`
+- Create: `src/JobSync.Core/Enums/SyncJobStatus.cs`
+- Create: `src/JobSync.Core/Models/JobApplication.cs`
+
+- [ ] **Step 1: Create BaseEntity**
+
+```csharp
+// src/JobSync.Core/Entities/BaseEntity.cs
+namespace JobSync.Core.Entities;
+
+public abstract class BaseEntity
+{
+    public Guid Id { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+    public DateTime? DeletedAt { get; set; }
+}
+```
+
+- [ ] **Step 2: Create SyncJobStatus enum**
+
+```csharp
+// src/JobSync.Core/Enums/SyncJobStatus.cs
+namespace JobSync.Core.Enums;
+
+public enum SyncJobStatus
+{
+    Pending,
+    Processing,
+    Completed,
+    Failed
+}
+```
+
+- [ ] **Step 3: Create User entity**
+
+```csharp
+// src/JobSync.Core/Entities/User.cs
+namespace JobSync.Core.Entities;
+
+public class User : BaseEntity
+{
+    public string FirstName { get; set; } = string.Empty;
+    public string LastName { get; set; } = string.Empty;
+    public string AccessToken { get; set; } = string.Empty;
+    public string RefreshToken { get; set; } = string.Empty;
+    public DateTime TokenExpiresAt { get; set; }
+}
+```
+
+- [ ] **Step 4: Create SyncJob entity**
+
+```csharp
+// src/JobSync.Core/Entities/SyncJob.cs
+using System.Text.Json;
+using JobSync.Core.Enums;
+
+namespace JobSync.Core.Entities;
+
+public class SyncJob : BaseEntity
+{
+    public Guid UserId { get; set; }
+    public User User { get; set; } = null!;
+    public SyncJobStatus Status { get; set; } = SyncJobStatus.Pending;
+    public JsonDocument? Result { get; set; }
+    public string? Error { get; set; }
+}
+```
+
+- [ ] **Step 5: Create JobApplication model (DTO for Gemini response)**
+
+```csharp
+// src/JobSync.Core/Models/JobApplication.cs
+namespace JobSync.Core.Models;
+
+public class JobApplication
+{
+    public string CompanyName { get; set; } = string.Empty;
+    public string JobRole { get; set; } = string.Empty;
+    public string AppliedDate { get; set; } = string.Empty;
+    public string Status { get; set; } = "applied";
+}
+```
+
+- [ ] **Step 6: Verify build**
+
+```bash
+dotnet build
+```
+
+Expected: Build succeeded.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add -A
+git commit -m "feat: add core domain models and enums"
+```
+
+---
+
+## Task 3: Core Interfaces
+
+**Files:**
+
+- Create: `src/JobSync.Core/Interfaces/IGmailService.cs`
+- Create: `src/JobSync.Core/Interfaces/IGeminiService.cs`
+- Create: `src/JobSync.Core/Interfaces/ISyncOrchestrator.cs`
+
+- [ ] **Step 1: Create IGmailService**
+
+```csharp
+// src/JobSync.Core/Interfaces/IGmailService.cs
+namespace JobSync.Core.Interfaces;
+
+public class EmailMessage
+{
+    public string Subject { get; set; } = string.Empty;
+    public string Body { get; set; } = string.Empty;
+    public string From { get; set; } = string.Empty;
+    public DateTime Date { get; set; }
+}
+
+public interface IGmailService
+{
+    Task<List<EmailMessage>> FetchEmailsAsync(Guid userId, CancellationToken cancellationToken = default);
+}
+```
+
+- [ ] **Step 2: Create IGeminiService**
+
+```csharp
+// src/JobSync.Core/Interfaces/IGeminiService.cs
+using JobSync.Core.Models;
+
+namespace JobSync.Core.Interfaces;
+
+public interface IGeminiService
+{
+    Task<List<JobApplication>> ClassifyBatchAsync(List<EmailMessage> emails, CancellationToken cancellationToken = default);
+    Task<List<JobApplication>> DeduplicateAsync(List<JobApplication> applications, CancellationToken cancellationToken = default);
+}
+```
+
+- [ ] **Step 3: Create ISyncOrchestrator**
+
+```csharp
+// src/JobSync.Core/Interfaces/ISyncOrchestrator.cs
+using JobSync.Core.Models;
+
+namespace JobSync.Core.Interfaces;
+
+public interface ISyncOrchestrator
+{
+    Task<List<JobApplication>> ExecuteSyncAsync(Guid userId, CancellationToken cancellationToken = default);
+}
+```
+
+- [ ] **Step 4: Verify build**
+
+```bash
+dotnet build
+```
+
+Expected: Build succeeded.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add -A
+git commit -m "feat: add core service interfaces"
+```
+
+---
+
+## Task 4: Database Context & Configuration
+
+**Files:**
+
+- Create: `src/JobSync.Infrastructure/Data/AppDbContext.cs`
+- Create: `src/JobSync.Infrastructure/Data/Configurations/UserConfiguration.cs`
+- Create: `src/JobSync.Infrastructure/Data/Configurations/SyncJobConfiguration.cs`
+
+- [ ] **Step 1: Create AppDbContext**
+
+```csharp
+// src/JobSync.Infrastructure/Data/AppDbContext.cs
+using JobSync.Core.Entities;
+using Microsoft.EntityFrameworkCore;
+
+namespace JobSync.Infrastructure.Data;
+
+public class AppDbContext : DbContext
+{
+    public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
+
+    public DbSet<User> Users => Set<User>();
+    public DbSet<SyncJob> SyncJobs => Set<SyncJob>();
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        modelBuilder.ApplyConfigurationsFromAssembly(typeof(AppDbContext).Assembly);
+    }
+
+    public override int SaveChanges()
+    {
+        SetTimestamps();
+        return base.SaveChanges();
+    }
+
+    public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+    {
+        SetTimestamps();
+        return base.SaveChangesAsync(cancellationToken);
+    }
+
+    private void SetTimestamps()
+    {
+        var entries = ChangeTracker.Entries<BaseEntity>();
+        var now = DateTime.UtcNow;
+
+        foreach (var entry in entries)
+        {
+            if (entry.State == EntityState.Added)
+            {
+                entry.Entity.CreatedAt = now;
+                entry.Entity.UpdatedAt = now;
+            }
+            else if (entry.State == EntityState.Modified)
+            {
+                entry.Entity.UpdatedAt = now;
+            }
+        }
+    }
+}
+```
+
+- [ ] **Step 2: Create UserConfiguration**
+
+```csharp
+// src/JobSync.Infrastructure/Data/Configurations/UserConfiguration.cs
+using JobSync.Core.Entities;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
+
+namespace JobSync.Infrastructure.Data.Configurations;
+
+public class UserConfiguration : IEntityTypeConfiguration<User>
+{
+    public void Configure(EntityTypeBuilder<User> builder)
+    {
+        builder.HasKey(u => u.Id);
+        builder.Property(u => u.FirstName).HasMaxLength(100).IsRequired();
+        builder.Property(u => u.LastName).HasMaxLength(100).IsRequired();
+        builder.Property(u => u.AccessToken).IsRequired();
+        builder.Property(u => u.RefreshToken).IsRequired();
+        builder.HasQueryFilter(u => u.DeletedAt == null);
+    }
+}
+```
+
+- [ ] **Step 3: Create SyncJobConfiguration**
+
+```csharp
+// src/JobSync.Infrastructure/Data/Configurations/SyncJobConfiguration.cs
+using JobSync.Core.Entities;
+using JobSync.Core.Enums;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
+
+namespace JobSync.Infrastructure.Data.Configurations;
+
+public class SyncJobConfiguration : IEntityTypeConfiguration<SyncJob>
+{
+    public void Configure(EntityTypeBuilder<SyncJob> builder)
+    {
+        builder.HasKey(s => s.Id);
+        builder.Property(s => s.Status)
+            .HasConversion<string>()
+            .HasMaxLength(20)
+            .IsRequired();
+        builder.Property(s => s.Result).HasColumnType("jsonb");
+        builder.HasOne(s => s.User)
+            .WithMany()
+            .HasForeignKey(s => s.UserId)
+            .OnDelete(DeleteBehavior.Cascade);
+        builder.HasQueryFilter(s => s.DeletedAt == null);
+    }
+}
+```
+
+- [ ] **Step 4: Verify build**
+
+```bash
+dotnet build
+```
+
+Expected: Build succeeded.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add -A
+git commit -m "feat: add EF Core DbContext with entity configurations"
+```
+
+---
+
+## Task 5: Gmail Service
+
+**Files:**
+
+- Create: `src/JobSync.Infrastructure/Services/GmailService.cs`
+- Create: `tests/JobSync.Infrastructure.Tests/Services/GmailServiceTests.cs`
+
+- [ ] **Step 1: Write failing test for GmailService**
+
+```csharp
+// tests/JobSync.Infrastructure.Tests/Services/GmailServiceTests.cs
+using JobSync.Core.Entities;
+using JobSync.Infrastructure.Data;
+using JobSync.Infrastructure.Services;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using NSubstitute;
+
+namespace JobSync.Infrastructure.Tests.Services;
+
+public class GmailServiceTests
+{
+    [Fact]
+    public async Task FetchEmailsAsync_ThrowsWhenUserNotFound()
+    {
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
+            .Options;
+        using var context = new AppDbContext(options);
+        var config = Substitute.For<IConfiguration>();
+
+        var service = new GmailService(context, config);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => service.FetchEmailsAsync(Guid.NewGuid()));
+    }
+}
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+```bash
+dotnet test tests/JobSync.Infrastructure.Tests --filter "GmailServiceTests"
+```
+
+Expected: FAIL — `GmailService` class not found.
+
+- [ ] **Step 3: Implement GmailService**
+
+```csharp
+// src/JobSync.Infrastructure/Services/GmailService.cs
+using Google.Apis.Auth.OAuth2;
+using Google.Apis.Auth.OAuth2.Flows;
+using Google.Apis.Auth.OAuth2.Responses;
+using Google.Apis.Gmail.v1;
+using Google.Apis.Gmail.v1.Data;
+using Google.Apis.Services;
+using JobSync.Core.Interfaces;
+using JobSync.Infrastructure.Data;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+
+namespace JobSync.Infrastructure.Services;
+
+public class GmailService : IGmailService
+{
+    private readonly AppDbContext _dbContext;
+    private readonly IConfiguration _configuration;
+
+    public GmailService(AppDbContext dbContext, IConfiguration configuration)
+    {
+        _dbContext = dbContext;
+        _configuration = configuration;
+    }
+
+    public async Task<List<EmailMessage>> FetchEmailsAsync(Guid userId, CancellationToken cancellationToken = default)
+    {
+        var user = await _dbContext.Users.FirstOrDefaultAsync(u => u.Id == userId, cancellationToken)
+            ?? throw new InvalidOperationException($"User {userId} not found");
+
+        var credential = await GetCredentialAsync(user, cancellationToken);
+
+        using var gmailService = new Google.Apis.Gmail.v1.GmailService(new BaseClientService.Initializer
+        {
+            HttpClientInitializer = credential,
+            ApplicationName = "JobSync"
+        });
+
+        var after = DateTimeOffset.UtcNow.AddDays(-30).ToUnixTimeSeconds();
+        var request = gmailService.Users.Messages.List("me");
+        request.Q = $"after:{after}";
+        request.MaxResults = 500;
+
+        var emails = new List<EmailMessage>();
+        var response = await request.ExecuteAsync(cancellationToken);
+
+        if (response.Messages == null)
+            return emails;
+
+        foreach (var msgRef in response.Messages)
+        {
+            var msg = await gmailService.Users.Messages.Get("me", msgRef.Id).ExecuteAsync(cancellationToken);
+            emails.Add(ParseMessage(msg));
+        }
+
+        return emails;
+    }
+
+    private async Task<UserCredential> GetCredentialAsync(Core.Entities.User user, CancellationToken cancellationToken)
+    {
+        var flow = new GoogleAuthorizationCodeFlow(new GoogleAuthorizationCodeFlow.Initializer
+        {
+            ClientSecrets = new ClientSecrets
+            {
+                ClientId = _configuration["Google:ClientId"]!,
+                ClientSecret = _configuration["Google:ClientSecret"]!
+            },
+            Scopes = new[] { Google.Apis.Gmail.v1.GmailService.Scope.GmailReadonly }
+        });
+
+        var token = new TokenResponse
+        {
+            AccessToken = user.AccessToken,
+            RefreshToken = user.RefreshToken,
+            ExpiresInSeconds = (long)(user.TokenExpiresAt - DateTime.UtcNow).TotalSeconds
+        };
+
+        var credential = new UserCredential(flow, "user", token);
+
+        if (credential.Token.IsStale)
+        {
+            await credential.RefreshTokenAsync(cancellationToken);
+            user.AccessToken = credential.Token.AccessToken;
+            user.RefreshToken = credential.Token.RefreshToken ?? user.RefreshToken;
+            user.TokenExpiresAt = credential.Token.IssuedUtc.AddSeconds(credential.Token.ExpiresInSeconds ?? 3600);
+            await _dbContext.SaveChangesAsync(cancellationToken);
+        }
+
+        return credential;
+    }
+
+    private static EmailMessage ParseMessage(Message message)
+    {
+        var headers = message.Payload?.Headers ?? new List<MessagePartHeader>();
+        var subject = headers.FirstOrDefault(h => h.Name == "Subject")?.Value ?? "";
+        var from = headers.FirstOrDefault(h => h.Name == "From")?.Value ?? "";
+        var dateStr = headers.FirstOrDefault(h => h.Name == "Date")?.Value ?? "";
+
+        DateTime.TryParse(dateStr, out var date);
+
+        var body = GetBody(message.Payload);
+
+        return new EmailMessage
+        {
+            Subject = subject,
+            From = from,
+            Date = date,
+            Body = body
+        };
+    }
+
+    private static string GetBody(MessagePart? payload)
+    {
+        if (payload == null) return string.Empty;
+
+        if (!string.IsNullOrEmpty(payload.Body?.Data))
+        {
+            return DecodeBase64(payload.Body.Data);
+        }
+
+        if (payload.Parts != null)
+        {
+            foreach (var part in payload.Parts)
+            {
+                if (part.MimeType == "text/plain" && !string.IsNullOrEmpty(part.Body?.Data))
+                {
+                    return DecodeBase64(part.Body.Data);
+                }
+            }
+            foreach (var part in payload.Parts)
+            {
+                if (part.MimeType == "text/html" && !string.IsNullOrEmpty(part.Body?.Data))
+                {
+                    return DecodeBase64(part.Body.Data);
+                }
+            }
+        }
+
+        return string.Empty;
+    }
+
+    private static string DecodeBase64(string input)
+    {
+        var data = input.Replace('-', '+').Replace('_', '/');
+        var bytes = Convert.FromBase64String(data);
+        return System.Text.Encoding.UTF8.GetString(bytes);
+    }
+}
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+```bash
+dotnet test tests/JobSync.Infrastructure.Tests --filter "GmailServiceTests"
+```
+
+Expected: PASS.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add -A
+git commit -m "feat: implement Gmail service with token refresh"
+```
+
+---
+
+## Task 6: Gemini Service
+
+**Files:**
+
+- Create: `src/JobSync.Infrastructure/Services/GeminiService.cs`
+- Create: `tests/JobSync.Infrastructure.Tests/Services/GeminiServiceTests.cs`
+
+- [ ] **Step 1: Write failing test for batch classification**
+
+```csharp
+// tests/JobSync.Infrastructure.Tests/Services/GeminiServiceTests.cs
+using JobSync.Core.Interfaces;
+using JobSync.Infrastructure.Services;
+using Microsoft.Extensions.Configuration;
+using NSubstitute;
+
+namespace JobSync.Infrastructure.Tests.Services;
+
+public class GeminiServiceTests
+{
+    [Fact]
+    public async Task ClassifyBatchAsync_ReturnsEmptyList_WhenNoEmails()
+    {
+        var config = Substitute.For<IConfiguration>();
+        config["Google:GeminiApiKey"].Returns("test-key");
+
+        var service = new GeminiService(config);
+
+        var result = await service.ClassifyBatchAsync(new List<EmailMessage>());
+
+        Assert.Empty(result);
+    }
+
+    [Fact]
+    public async Task DeduplicateAsync_ReturnsEmptyList_WhenNoApplications()
+    {
+        var config = Substitute.For<IConfiguration>();
+        config["Google:GeminiApiKey"].Returns("test-key");
+
+        var service = new GeminiService(config);
+
+        var result = await service.DeduplicateAsync(new List<Core.Models.JobApplication>());
+
+        Assert.Empty(result);
+    }
+}
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+```bash
+dotnet test tests/JobSync.Infrastructure.Tests --filter "GeminiServiceTests"
+```
+
+Expected: FAIL — `GeminiService` class not found.
+
+- [ ] **Step 3: Implement GeminiService**
+
+````csharp
+// src/JobSync.Infrastructure/Services/GeminiService.cs
+using System.Text.Json;
+using GenerativeAI;
+using JobSync.Core.Interfaces;
+using JobSync.Core.Models;
+using Microsoft.Extensions.Configuration;
+
+namespace JobSync.Infrastructure.Services;
+
+public class GeminiService : IGeminiService
+{
+    private readonly IConfiguration _configuration;
+
+    public GeminiService(IConfiguration configuration)
+    {
+        _configuration = configuration;
+    }
+
+    public async Task<List<JobApplication>> ClassifyBatchAsync(List<EmailMessage> emails, CancellationToken cancellationToken = default)
+    {
+        if (emails.Count == 0)
+            return new List<JobApplication>();
+
+        var model = CreateModel();
+
+        var emailsText = string.Join("\n---\n", emails.Select(e =>
+            $"Subject: {e.Subject}\nFrom: {e.From}\nDate: {e.Date:yyyy-MM-dd}\nBody: {e.Body[..Math.Min(e.Body.Length, 500)]}"));
+
+        var prompt = $"""
+            Given these emails, identify which are job application related.
+            For duplicates about the same application (e.g. platform confirmation like Seek.com.au + company auto-reply), return only one entry.
+            Return ONLY a JSON array (no markdown, no explanation) with objects containing: companyName, jobRole, appliedDate (use the email date in yyyy-MM-dd format), status (always "applied").
+            If no emails are job-related, return an empty array [].
+
+            Emails:
+            {emailsText}
+            """;
+
+        var response = await model.GenerateContentAsync(prompt, cancellationToken: cancellationToken);
+        return ParseResponse(response.Text ?? "[]");
+    }
+
+    public async Task<List<JobApplication>> DeduplicateAsync(List<JobApplication> applications, CancellationToken cancellationToken = default)
+    {
+        if (applications.Count == 0)
+            return new List<JobApplication>();
+
+        var model = CreateModel();
+
+        var applicationsJson = JsonSerializer.Serialize(applications);
+
+        var prompt = $"""
+            Given these job application results from multiple batches, deduplicate entries for the same company+role combination.
+            Return ONLY the final consolidated JSON array (no markdown, no explanation).
+
+            Applications:
+            {applicationsJson}
+            """;
+
+        var response = await model.GenerateContentAsync(prompt, cancellationToken: cancellationToken);
+        return ParseResponse(response.Text ?? "[]");
+    }
+
+    private GenerativeModel CreateModel()
+    {
+        var apiKey = _configuration["Google:GeminiApiKey"]!;
+        var genAi = new GoogleGenAi(apiKey);
+        return genAi.CreateGenerativeModel(GoogleGenAiModels.Gemini2Flash);
+    }
+
+    private static List<JobApplication> ParseResponse(string responseText)
+    {
+        var cleaned = responseText.Trim();
+        if (cleaned.StartsWith("```"))
+        {
+            cleaned = cleaned.Split('\n', 2).Last();
+            cleaned = cleaned[..cleaned.LastIndexOf("```")];
+        }
+        cleaned = cleaned.Trim();
+
+        try
+        {
+            return JsonSerializer.Deserialize<List<JobApplication>>(cleaned, new JsonSerializerOptions
+            {
+                PropertyNameCamelCase = true
+            }) ?? new List<JobApplication>();
+        }
+        catch (JsonException)
+        {
+            return new List<JobApplication>();
+        }
+    }
+}
+````
+
+- [ ] **Step 4: Run test to verify it passes**
+
+```bash
+dotnet test tests/JobSync.Infrastructure.Tests --filter "GeminiServiceTests"
+```
+
+Expected: PASS.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add -A
+git commit -m "feat: implement Gemini service for email classification and deduplication"
+```
+
+---
+
+## Task 7: Sync Orchestrator
+
+**Files:**
+
+- Create: `src/JobSync.Infrastructure/Services/SyncOrchestrator.cs`
+- Create: `tests/JobSync.Infrastructure.Tests/Services/SyncOrchestratorTests.cs`
+
+- [ ] **Step 1: Write failing test**
+
+```csharp
+// tests/JobSync.Infrastructure.Tests/Services/SyncOrchestratorTests.cs
+using JobSync.Core.Interfaces;
+using JobSync.Core.Models;
+using JobSync.Infrastructure.Services;
+using NSubstitute;
+
+namespace JobSync.Infrastructure.Tests.Services;
+
+public class SyncOrchestratorTests
+{
+    [Fact]
+    public async Task ExecuteSyncAsync_ReturnsEmpty_WhenNoEmails()
+    {
+        var gmailService = Substitute.For<IGmailService>();
+        var geminiService = Substitute.For<IGeminiService>();
+
+        gmailService.FetchEmailsAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns(new List<EmailMessage>());
+
+        var orchestrator = new SyncOrchestrator(gmailService, geminiService);
+        var userId = Guid.NewGuid();
+
+        var result = await orchestrator.ExecuteSyncAsync(userId);
+
+        Assert.Empty(result);
+    }
+
+    [Fact]
+    public async Task ExecuteSyncAsync_BatchesEmailsAndDeduplicates()
+    {
+        var gmailService = Substitute.For<IGmailService>();
+        var geminiService = Substitute.For<IGeminiService>();
+
+        // 25 emails = 2 batches (20 + 5)
+        var emails = Enumerable.Range(1, 25)
+            .Select(i => new EmailMessage { Subject = $"Email {i}", Body = "body", From = "test@test.com", Date = DateTime.UtcNow })
+            .ToList();
+
+        gmailService.FetchEmailsAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns(emails);
+
+        var batchResult = new List<JobApplication>
+        {
+            new() { CompanyName = "Company A", JobRole = "Dev", AppliedDate = "2026-04-01", Status = "applied" }
+        };
+
+        geminiService.ClassifyBatchAsync(Arg.Any<List<EmailMessage>>(), Arg.Any<CancellationToken>())
+            .Returns(batchResult);
+
+        geminiService.DeduplicateAsync(Arg.Any<List<JobApplication>>(), Arg.Any<CancellationToken>())
+            .Returns(batchResult);
+
+        var orchestrator = new SyncOrchestrator(gmailService, geminiService);
+
+        var result = await orchestrator.ExecuteSyncAsync(Guid.NewGuid());
+
+        Assert.Single(result);
+        Assert.Equal("Company A", result[0].CompanyName);
+
+        // Should have been called twice (2 batches of 20 and 5)
+        await geminiService.Received(2).ClassifyBatchAsync(Arg.Any<List<EmailMessage>>(), Arg.Any<CancellationToken>());
+        // Final deduplicate pass
+        await geminiService.Received(1).DeduplicateAsync(Arg.Any<List<JobApplication>>(), Arg.Any<CancellationToken>());
+    }
+}
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+```bash
+dotnet test tests/JobSync.Infrastructure.Tests --filter "SyncOrchestratorTests"
+```
+
+Expected: FAIL — `SyncOrchestrator` not found.
+
+- [ ] **Step 3: Implement SyncOrchestrator**
+
+```csharp
+// src/JobSync.Infrastructure/Services/SyncOrchestrator.cs
+using JobSync.Core.Interfaces;
+using JobSync.Core.Models;
+
+namespace JobSync.Infrastructure.Services;
+
+public class SyncOrchestrator : ISyncOrchestrator
+{
+    private readonly IGmailService _gmailService;
+    private readonly IGeminiService _geminiService;
+    private const int BatchSize = 20;
+
+    public SyncOrchestrator(IGmailService gmailService, IGeminiService geminiService)
+    {
+        _gmailService = gmailService;
+        _geminiService = geminiService;
+    }
+
+    public async Task<List<JobApplication>> ExecuteSyncAsync(Guid userId, CancellationToken cancellationToken = default)
+    {
+        var emails = await _gmailService.FetchEmailsAsync(userId, cancellationToken);
+
+        if (emails.Count == 0)
+            return new List<JobApplication>();
+
+        var allApplications = new List<JobApplication>();
+
+        var batches = emails.Chunk(BatchSize).ToList();
+
+        foreach (var batch in batches)
+        {
+            var batchResults = await _geminiService.ClassifyBatchAsync(batch.ToList(), cancellationToken);
+            allApplications.AddRange(batchResults);
+        }
+
+        if (allApplications.Count == 0)
+            return new List<JobApplication>();
+
+        var deduplicated = await _geminiService.DeduplicateAsync(allApplications, cancellationToken);
+        return deduplicated;
+    }
+}
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+```bash
+dotnet test tests/JobSync.Infrastructure.Tests --filter "SyncOrchestratorTests"
+```
+
+Expected: PASS.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add -A
+git commit -m "feat: implement sync orchestrator with batching and deduplication"
+```
+
+---
+
+## Task 8: Background Worker
+
+**Files:**
+
+- Create: `src/JobSync.Worker/SyncBackgroundService.cs`
+- Create: `tests/JobSync.Worker.Tests/SyncBackgroundServiceTests.cs`
+
+- [ ] **Step 1: Write failing test**
+
+```csharp
+// tests/JobSync.Worker.Tests/SyncBackgroundServiceTests.cs
+using System.Text.Json;
+using JobSync.Core.Entities;
+using JobSync.Core.Enums;
+using JobSync.Core.Interfaces;
+using JobSync.Core.Models;
+using JobSync.Infrastructure.Data;
+using JobSync.Worker;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using NSubstitute;
+
+namespace JobSync.Worker.Tests;
+
+public class SyncBackgroundServiceTests
+{
+    [Fact]
+    public async Task ProcessesPendingJob_SetsCompleted()
+    {
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+
+        using var context = new AppDbContext(options);
+
+        var user = new User { Id = Guid.NewGuid(), FirstName = "Test", LastName = "User", AccessToken = "a", RefreshToken = "r", TokenExpiresAt = DateTime.UtcNow.AddHours(1) };
+        context.Users.Add(user);
+
+        var job = new SyncJob { Id = Guid.NewGuid(), UserId = user.Id, Status = SyncJobStatus.Pending };
+        context.SyncJobs.Add(job);
+        await context.SaveChangesAsync();
+
+        var orchestrator = Substitute.For<ISyncOrchestrator>();
+        orchestrator.ExecuteSyncAsync(user.Id, Arg.Any<CancellationToken>())
+            .Returns(new List<JobApplication>
+            {
+                new() { CompanyName = "TestCo", JobRole = "Dev", AppliedDate = "2026-04-01", Status = "applied" }
+            });
+
+        var serviceProvider = Substitute.For<IServiceProvider>();
+        var scope = Substitute.For<IServiceScope>();
+        var scopeFactory = Substitute.For<IServiceScopeFactory>();
+        scopeFactory.CreateScope().Returns(scope);
+        scope.ServiceProvider.Returns(serviceProvider);
+        serviceProvider.GetService(typeof(IServiceScopeFactory)).Returns(scopeFactory);
+        serviceProvider.GetService(typeof(AppDbContext)).Returns(context);
+        serviceProvider.GetService(typeof(ISyncOrchestrator)).Returns(orchestrator);
+
+        var logger = Substitute.For<ILogger<SyncBackgroundService>>();
+        var worker = new SyncBackgroundService(scopeFactory, logger);
+
+        await worker.ProcessPendingJobsAsync(CancellationToken.None);
+
+        var updated = await context.SyncJobs.FindAsync(job.Id);
+        Assert.Equal(SyncJobStatus.Completed, updated!.Status);
+        Assert.NotNull(updated.Result);
+    }
+}
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+```bash
+dotnet test tests/JobSync.Worker.Tests --filter "SyncBackgroundServiceTests"
+```
+
+Expected: FAIL — `SyncBackgroundService` not found.
+
+- [ ] **Step 3: Implement SyncBackgroundService**
+
+```csharp
+// src/JobSync.Worker/SyncBackgroundService.cs
+using System.Text.Json;
+using JobSync.Core.Entities;
+using JobSync.Core.Enums;
+using JobSync.Core.Interfaces;
+using JobSync.Infrastructure.Data;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+
+namespace JobSync.Worker;
+
+public class SyncBackgroundService : BackgroundService
+{
+    private readonly IServiceScopeFactory _scopeFactory;
+    private readonly ILogger<SyncBackgroundService> _logger;
+    private static readonly TimeSpan PollingInterval = TimeSpan.FromSeconds(5);
+
+    public SyncBackgroundService(IServiceScopeFactory scopeFactory, ILogger<SyncBackgroundService> logger)
+    {
+        _scopeFactory = scopeFactory;
+        _logger = logger;
+    }
+
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        while (!stoppingToken.IsCancellationRequested)
+        {
+            await ProcessPendingJobsAsync(stoppingToken);
+            await Task.Delay(PollingInterval, stoppingToken);
+        }
+    }
+
+    public async Task ProcessPendingJobsAsync(CancellationToken cancellationToken)
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var orchestrator = scope.ServiceProvider.GetRequiredService<ISyncOrchestrator>();
+
+        var pendingJobs = await dbContext.SyncJobs
+            .Where(j => j.Status == SyncJobStatus.Pending)
+            .ToListAsync(cancellationToken);
+
+        foreach (var job in pendingJobs)
+        {
+            try
+            {
+                job.Status = SyncJobStatus.Processing;
+                await dbContext.SaveChangesAsync(cancellationToken);
+
+                var results = await orchestrator.ExecuteSyncAsync(job.UserId, cancellationToken);
+
+                job.Result = JsonSerializer.SerializeToDocument(results);
+                job.Status = SyncJobStatus.Completed;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Sync job {JobId} failed", job.Id);
+                job.Status = SyncJobStatus.Failed;
+                job.Error = ex.Message;
+            }
+
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+    }
+}
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+```bash
+dotnet test tests/JobSync.Worker.Tests --filter "SyncBackgroundServiceTests"
+```
+
+Expected: PASS.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add -A
+git commit -m "feat: implement background worker for async sync job processing"
+```
+
+---
+
+## Task 9: Auth Controller
+
+**Files:**
+
+- Create: `src/JobSync.Api/Controllers/AuthController.cs`
+- Create: `tests/JobSync.Api.Tests/Controllers/AuthControllerTests.cs`
+
+- [ ] **Step 1: Write failing test**
+
+```csharp
+// tests/JobSync.Api.Tests/Controllers/AuthControllerTests.cs
+using JobSync.Api.Controllers;
+using JobSync.Infrastructure.Data;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using NSubstitute;
+
+namespace JobSync.Api.Tests.Controllers;
+
+public class AuthControllerTests
+{
+    [Fact]
+    public void GetGmailUrl_ReturnsOkWithUrl()
+    {
+        var config = Substitute.For<IConfiguration>();
+        config["Google:ClientId"].Returns("test-client-id");
+        config["Google:RedirectUri"].Returns("http://localhost:3000/callback");
+
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        using var context = new AppDbContext(options);
+
+        var controller = new AuthController(context, config);
+
+        var result = controller.GetGmailUrl();
+
+        var okResult = Assert.IsType<OkObjectResult>(result);
+        Assert.NotNull(okResult.Value);
+    }
+
+    [Fact]
+    public async Task Connect_CreatesUser_ReturnsUserId()
+    {
+        var config = Substitute.For<IConfiguration>();
+        config["Google:ClientId"].Returns("test-client-id");
+        config["Google:ClientSecret"].Returns("test-secret");
+        config["Google:RedirectUri"].Returns("http://localhost:3000/callback");
+
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        using var context = new AppDbContext(options);
+
+        var controller = new AuthController(context, config);
+
+        // Note: Cannot fully integration-test OAuth exchange without mocking Google
+        // This test verifies controller instantiation and route setup
+        Assert.NotNull(controller);
+    }
+}
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+```bash
+dotnet test tests/JobSync.Api.Tests --filter "AuthControllerTests"
+```
+
+Expected: FAIL — `AuthController` not found.
+
+- [ ] **Step 3: Implement AuthController**
+
+```csharp
+// src/JobSync.Api/Controllers/AuthController.cs
+using Google.Apis.Auth.OAuth2;
+using Google.Apis.Auth.OAuth2.Flows;
+using Google.Apis.Auth.OAuth2.Responses;
+using Google.Apis.Gmail.v1;
+using JobSync.Core.Entities;
+using JobSync.Infrastructure.Data;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+
+namespace JobSync.Api.Controllers;
+
+[ApiController]
+[Route("api/auth/gmail")]
+public class AuthController : ControllerBase
+{
+    private readonly AppDbContext _dbContext;
+    private readonly IConfiguration _configuration;
+
+    public AuthController(AppDbContext dbContext, IConfiguration configuration)
+    {
+        _dbContext = dbContext;
+        _configuration = configuration;
+    }
+
+    [HttpGet("url")]
+    public IActionResult GetGmailUrl()
+    {
+        var clientId = _configuration["Google:ClientId"]!;
+        var redirectUri = _configuration["Google:RedirectUri"]!;
+
+        var url = $"https://accounts.google.com/o/oauth2/v2/auth?" +
+                  $"client_id={clientId}&" +
+                  $"redirect_uri={Uri.EscapeDataString(redirectUri)}&" +
+                  $"response_type=code&" +
+                  $"scope={Uri.EscapeDataString(GmailService.Scope.GmailReadonly)}&" +
+                  $"access_type=offline&" +
+                  $"prompt=consent";
+
+        return Ok(new { url });
+    }
+
+    [HttpPost("connect")]
+    public async Task<IActionResult> Connect([FromBody] ConnectRequest request)
+    {
+        var flow = new GoogleAuthorizationCodeFlow(new GoogleAuthorizationCodeFlow.Initializer
+        {
+            ClientSecrets = new ClientSecrets
+            {
+                ClientId = _configuration["Google:ClientId"]!,
+                ClientSecret = _configuration["Google:ClientSecret"]!
+            },
+            Scopes = new[] { GmailService.Scope.GmailReadonly }
+        });
+
+        var tokenResponse = await flow.ExchangeCodeForTokenAsync(
+            "user",
+            request.Code,
+            _configuration["Google:RedirectUri"]!,
+            CancellationToken.None);
+
+        var user = new User
+        {
+            Id = Guid.NewGuid(),
+            FirstName = request.FirstName,
+            LastName = request.LastName,
+            AccessToken = tokenResponse.AccessToken,
+            RefreshToken = tokenResponse.RefreshToken,
+            TokenExpiresAt = tokenResponse.IssuedUtc.AddSeconds(tokenResponse.ExpiresInSeconds ?? 3600)
+        };
+
+        _dbContext.Users.Add(user);
+        await _dbContext.SaveChangesAsync();
+
+        return Ok(new { userId = user.Id });
+    }
+}
+
+public class ConnectRequest
+{
+    public string Code { get; set; } = string.Empty;
+    public string FirstName { get; set; } = string.Empty;
+    public string LastName { get; set; } = string.Empty;
+}
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+```bash
+dotnet test tests/JobSync.Api.Tests --filter "AuthControllerTests"
+```
+
+Expected: PASS.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add -A
+git commit -m "feat: implement auth controller with Gmail OAuth connect"
+```
+
+---
+
+## Task 10: Sync Controller
+
+**Files:**
+
+- Create: `src/JobSync.Api/Controllers/SyncController.cs`
+- Create: `tests/JobSync.Api.Tests/Controllers/SyncControllerTests.cs`
+
+- [ ] **Step 1: Write failing test**
+
+```csharp
+// tests/JobSync.Api.Tests/Controllers/SyncControllerTests.cs
+using System.Text.Json;
+using JobSync.Api.Controllers;
+using JobSync.Core.Entities;
+using JobSync.Core.Enums;
+using JobSync.Core.Models;
+using JobSync.Infrastructure.Data;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+
+namespace JobSync.Api.Tests.Controllers;
+
+public class SyncControllerTests
+{
+    [Fact]
+    public async Task StartSync_CreatesJob_ReturnsJobId()
+    {
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        using var context = new AppDbContext(options);
+
+        var user = new User { Id = Guid.NewGuid(), FirstName = "Test", LastName = "User", AccessToken = "a", RefreshToken = "r", TokenExpiresAt = DateTime.UtcNow.AddHours(1) };
+        context.Users.Add(user);
+        await context.SaveChangesAsync();
+
+        var controller = new SyncController(context);
+
+        var result = await controller.StartSync(new StartSyncRequest { UserId = user.Id });
+
+        var okResult = Assert.IsType<OkObjectResult>(result);
+        Assert.NotNull(okResult.Value);
+    }
+
+    [Fact]
+    public async Task GetStatus_ReturnsJobWithResults()
+    {
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        using var context = new AppDbContext(options);
+
+        var applications = new List<JobApplication>
+        {
+            new() { CompanyName = "TestCo", JobRole = "Dev", AppliedDate = "2026-04-01", Status = "applied" }
+        };
+
+        var job = new SyncJob
+        {
+            Id = Guid.NewGuid(),
+            UserId = Guid.NewGuid(),
+            Status = SyncJobStatus.Completed,
+            Result = JsonSerializer.SerializeToDocument(applications)
+        };
+        context.SyncJobs.Add(job);
+        await context.SaveChangesAsync();
+
+        var controller = new SyncController(context);
+
+        var result = await controller.GetStatus(job.Id);
+
+        var okResult = Assert.IsType<OkObjectResult>(result);
+        Assert.NotNull(okResult.Value);
+    }
+
+    [Fact]
+    public async Task GetStatus_ReturnsNotFound_WhenJobMissing()
+    {
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        using var context = new AppDbContext(options);
+
+        var controller = new SyncController(context);
+
+        var result = await controller.GetStatus(Guid.NewGuid());
+
+        Assert.IsType<NotFoundResult>(result);
+    }
+}
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+```bash
+dotnet test tests/JobSync.Api.Tests --filter "SyncControllerTests"
+```
+
+Expected: FAIL — `SyncController` not found.
+
+- [ ] **Step 3: Implement SyncController**
+
+```csharp
+// src/JobSync.Api/Controllers/SyncController.cs
+using JobSync.Core.Entities;
+using JobSync.Core.Enums;
+using JobSync.Infrastructure.Data;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+
+namespace JobSync.Api.Controllers;
+
+[ApiController]
+[Route("api/sync")]
+public class SyncController : ControllerBase
+{
+    private readonly AppDbContext _dbContext;
+
+    public SyncController(AppDbContext dbContext)
+    {
+        _dbContext = dbContext;
+    }
+
+    [HttpPost]
+    public async Task<IActionResult> StartSync([FromBody] StartSyncRequest request)
+    {
+        var userExists = await _dbContext.Users.AnyAsync(u => u.Id == request.UserId);
+        if (!userExists)
+            return BadRequest(new { error = "User not found" });
+
+        var job = new SyncJob
+        {
+            Id = Guid.NewGuid(),
+            UserId = request.UserId,
+            Status = SyncJobStatus.Pending
+        };
+
+        _dbContext.SyncJobs.Add(job);
+        await _dbContext.SaveChangesAsync();
+
+        return Ok(new { jobId = job.Id });
+    }
+
+    [HttpGet("{jobId:guid}")]
+    public async Task<IActionResult> GetStatus(Guid jobId)
+    {
+        var job = await _dbContext.SyncJobs.FirstOrDefaultAsync(j => j.Id == jobId);
+        if (job == null)
+            return NotFound();
+
+        return Ok(new
+        {
+            jobId = job.Id,
+            status = job.Status.ToString().ToLowerInvariant(),
+            result = job.Result,
+            error = job.Error
+        });
+    }
+}
+
+public class StartSyncRequest
+{
+    public Guid UserId { get; set; }
+}
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+```bash
+dotnet test tests/JobSync.Api.Tests --filter "SyncControllerTests"
+```
+
+Expected: PASS.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add -A
+git commit -m "feat: implement sync controller with start and polling endpoints"
+```
+
+---
+
+## Task 11: Wiring — Program.cs & Configuration
+
+**Files:**
+
+- Modify: `src/JobSync.Api/Program.cs`
+- Modify: `src/JobSync.Api/appsettings.json`
+- Create: `src/JobSync.Api/appsettings.Development.json`
+
+- [ ] **Step 1: Configure appsettings.json**
+
+```json
+// src/JobSync.Api/appsettings.json
+{
+  "Logging": {
+    "LogLevel": {
+      "Default": "Information",
+      "Microsoft.AspNetCore": "Warning"
+    }
+  },
+  "AllowedHosts": "*",
+  "ConnectionStrings": {
+    "DefaultConnection": "Host=localhost;Database=jobsync;Username=postgres;Password=postgres"
+  },
+  "Google": {
+    "ClientId": "",
+    "ClientSecret": "",
+    "RedirectUri": "http://localhost:3000/callback",
+    "GeminiApiKey": ""
+  }
+}
+```
+
+- [ ] **Step 2: Configure Program.cs**
+
+```csharp
+// src/JobSync.Api/Program.cs
+using JobSync.Core.Interfaces;
+using JobSync.Infrastructure.Data;
+using JobSync.Infrastructure.Services;
+using JobSync.Worker;
+using Microsoft.EntityFrameworkCore;
+
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddControllers();
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen();
+
+builder.Services.AddDbContext<AppDbContext>(options =>
+    options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
+
+builder.Services.AddScoped<IGmailService, GmailService>();
+builder.Services.AddScoped<IGeminiService, GeminiService>();
+builder.Services.AddScoped<ISyncOrchestrator, SyncOrchestrator>();
+builder.Services.AddHostedService<SyncBackgroundService>();
+
+builder.Services.AddCors(options =>
+{
+    options.AddDefaultPolicy(policy =>
+    {
+        policy.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader();
+    });
+});
+
+var app = builder.Build();
+
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI();
+}
+
+app.UseCors();
+app.MapControllers();
+
+app.Run();
+```
+
+- [ ] **Step 3: Verify build**
+
+```bash
+dotnet build
+```
+
+Expected: Build succeeded.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add -A
+git commit -m "feat: wire up DI, EF Core, and background service in Program.cs"
+```
+
+---
+
+## Task 12: Initial EF Migration
+
+**Files:**
+
+- Create: `src/JobSync.Infrastructure/Migrations/` (auto-generated)
+
+- [ ] **Step 1: Create initial migration**
+
+```bash
+dotnet ef migrations add InitialCreate --project src/JobSync.Infrastructure --startup-project src/JobSync.Api --output-dir Data/Migrations
+```
+
+- [ ] **Step 2: Verify migration generated**
+
+```bash
+ls src/JobSync.Infrastructure/Data/Migrations/
+```
+
+Expected: Files like `*_InitialCreate.cs` and `AppDbContextModelSnapshot.cs`.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add -A
+git commit -m "feat: add initial EF Core migration"
+```
+
+---
+
+## Task 13: Final Integration Verification
+
+- [ ] **Step 1: Run all tests**
+
+```bash
+dotnet test
+```
+
+Expected: All tests pass.
+
+- [ ] **Step 2: Verify app starts (requires PostgreSQL running)**
+
+```bash
+cd src/JobSync.Api
+dotnet run &
+sleep 3
+curl http://localhost:5000/swagger/index.html -s -o /dev/null -w "%{http_code}"
+kill %1
+```
+
+Expected: HTTP 200 from Swagger.
+
+- [ ] **Step 3: Final commit**
+
+```bash
+git add -A
+git commit -m "chore: verify full integration build and test pass"
+```

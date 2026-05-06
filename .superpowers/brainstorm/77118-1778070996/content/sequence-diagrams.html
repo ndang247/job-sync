@@ -1,0 +1,87 @@
+<h2>Job Sync — Sequence Diagrams</h2>
+<p class="subtitle">Two core flows: Gmail OAuth Connect & Sync Pipeline</p>
+
+<div class="section">
+  <h3>Flow 1: Gmail OAuth Connect</h3>
+  <div class="mockup">
+    <div class="mockup-header">OAuth Connection Flow</div>
+    <div
+      class="mockup-body"
+      style="
+        font-family: monospace;
+        font-size: 13px;
+        line-height: 1.8;
+        padding: 20px;
+        white-space: pre;
+      "
+    >
+      Client Backend Google OAuth │ │ │ │ GET /api/auth/gmail/url│ │
+      │────────────────────────▶│ │ │ │ │ │ ◀── OAuth consent URL ─┤ │ │ │ │ │
+      ── redirect to Google ─┼─────────────────────────▶│ │ │ │ │ │ User grants
+      consent │ │ │ │ │ ◀── callback with code─┼──────────────────────────┤ │ │
+      │ │ POST /api/auth/gmail/connect {code} │ │────────────────────────▶│ │ │
+      │ Exchange code for tokens│ │ │─────────────────────────▶│ │ │ │ │ │◀──
+      access + refresh token┤ │ │ │ │ │ Create/update User │ │ │ Store encrypted
+      tokens │ │ │ │ │ ◀── { userId } ────────┤ │ │ │ │
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>Flow 2: Sync Pipeline (Async)</h3>
+  <div class="mockup">
+    <div class="mockup-header">Sync Job Processing</div>
+    <div
+      class="mockup-body"
+      style="
+        font-family: monospace;
+        font-size: 13px;
+        line-height: 1.8;
+        padding: 20px;
+        white-space: pre;
+      "
+    >
+      Client Backend API Background Worker Gmail API Gemini AI │ │ │ │ │ │ POST
+      /api/sync │ │ │ │ │ {userId} │ │ │ │ │────────────────────▶│ │ │ │ │ │
+      Create SyncJob │ │ │ │ │ status=pending │ │ │ │◀── {jobId} ─────────┤ │ │
+      │ │ │ │ │ │ │ │ │ Pick up job │ │ │ │ │ status=processing│ │ │ │ │ │ │ │ │
+      │ Refresh token │ │ │ │ │─────────────────▶│ │ │ │ │◀─ new token ─────┤ │
+      │ │ │ │ │ │ │ │ Fetch emails │ │ │ │ │ (last 30 days) │ │ │ │
+      │─────────────────▶│ │ │ │ │◀─ emails[] ──────┤ │ │ │ │ │ │ │ GET
+      /api/sync/{id} │ │ Batch 1 (20) │ │ │────────────────────▶│
+      │──────────────────────────────────▶│ │◀─ status=processing─┤ │◀──
+      applications[]─────────────────┤ │ │ │ │ │ │ │ │ Batch 2 (20) │ │ │ │
+      │──────────────────────────────────▶│ │ │ │◀──
+      applications[]─────────────────┤ │ │ │ │ │ │ │ │ ... more batches │ │ │ │
+      │ │ │ │ │ │ Final merge pass │ │ │ │ │ (deduplicate all)│ │ │ │
+      │──────────────────────────────────▶│ │ │ │◀── final
+      results[]────────────────┤ │ │ │ │ │ │ │ │ Store result │ │ │ │ │
+      status=completed │ │ │ │ │ │ │ │ GET /api/sync/{id} │ │ │ │
+      │────────────────────▶│ │ │ │ │◀─ status=completed │ │ │ │ │ + results[] │
+      │ │ │ │ │ │ │ │
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>Error Handling</h3>
+  <div class="mockup">
+    <div class="mockup-header">Failure Scenario</div>
+    <div
+      class="mockup-body"
+      style="
+        font-family: monospace;
+        font-size: 13px;
+        line-height: 1.8;
+        padding: 20px;
+        white-space: pre;
+      "
+    >
+      Client Backend API Background Worker Gmail/Gemini │ │ │ │ │ │ │
+      Processing... │ │ │ │─────────────────▶│ │ │ │◀── ERROR ────────┤ │ │ │ │
+      │ │ │ Store error msg │ │ │ │ status=failed │ │ │ │ │ │ GET /api/sync/{id}
+      │ │ │ │────────────────────▶│ │ │ │◀─ status=failed │ │ │ │ + error
+      message │ │ │ │ │ │ │
+    </div>
+  </div>
+</div>
