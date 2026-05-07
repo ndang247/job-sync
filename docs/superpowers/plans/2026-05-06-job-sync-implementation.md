@@ -4,9 +4,9 @@
 
 **Goal:** Build a .NET 10 REST API that syncs job applications from Gmail via Gemini AI classification.
 
-**Architecture:** Async pipeline — client triggers sync, background worker fetches Gmail emails, batches them through Gemini for classification/deduplication, stores results in PostgreSQL. Polling endpoint for client to retrieve results.
+**Architecture:** Async pipeline — client triggers sync, background worker fetches Gmail emails, batches them through Gemini for classification/deduplication, stores results in PostgreSQL. SignalR pushes real-time progress to client; polling endpoint as fallback.
 
-**Tech Stack:** .NET 10, EF Core + Npgsql (PostgreSQL), Google.Apis.Gmail.v1, Google AI SDK, BackgroundService
+**Tech Stack:** .NET 10, EF Core + Npgsql (PostgreSQL), Google.Apis.Gmail.v1, Google AI SDK, BackgroundService, SignalR
 
 ---
 
@@ -23,6 +23,8 @@ JobSync/
 │   │   ├── Controllers/
 │   │   │   ├── AuthController.cs
 │   │   │   └── SyncController.cs
+│   │   ├── Hubs/
+│   │   │   └── SyncHub.cs
 │   │   └── JobSync.Api.csproj
 │   ├── JobSync.Core/
 │   │   ├── Entities/
@@ -247,6 +249,8 @@ public class SyncJob : BaseEntity
     public Guid UserId { get; set; }
     public User User { get; set; } = null!;
     public SyncJobStatus Status { get; set; } = SyncJobStatus.Pending;
+    public int Progress { get; set; }
+    public string? Stage { get; set; }
     public JsonDocument? Result { get; set; }
     public string? Error { get; set; }
 }
@@ -464,6 +468,7 @@ public class SyncJobConfiguration : IEntityTypeConfiguration<SyncJob>
             .HasConversion<string>()
             .HasMaxLength(20)
             .IsRequired();
+        builder.Property(s => s.Stage).HasMaxLength(100);
         builder.Property(s => s.Result).HasColumnType("jsonb");
         builder.HasOne(s => s.User)
             .WithMany()
@@ -1558,13 +1563,11 @@ git commit -m "feat: implement sync controller with start and polling endpoints"
 
 ---
 
-## Task 11: Wiring — Program.cs & Configuration
+## Task 11: Configuration Files
 
 **Files:**
 
-- Modify: `src/JobSync.Api/Program.cs`
 - Modify: `src/JobSync.Api/appsettings.json`
-- Create: `src/JobSync.Api/appsettings.Development.json`
 
 - [ ] **Step 1: Configure appsettings.json**
 
@@ -1590,7 +1593,22 @@ git commit -m "feat: implement sync controller with start and polling endpoints"
 }
 ```
 
-- [ ] **Step 2: Configure Program.cs**
+- [ ] **Step 2: Commit**
+
+```bash
+git add -A
+git commit -m "feat: add application configuration"
+```
+
+---
+
+## Task 12: Initial Program.cs (without SignalR — added in Task 16)
+
+**Files:**
+
+- Modify: `src/JobSync.Api/Program.cs`
+
+- [ ] **Step 1: Configure basic Program.cs**
 
 ```csharp
 // src/JobSync.Api/Program.cs
@@ -1636,7 +1654,7 @@ app.MapControllers();
 app.Run();
 ```
 
-- [ ] **Step 3: Verify build**
+- [ ] **Step 2: Verify build**
 
 ```bash
 dotnet build
@@ -1644,7 +1662,7 @@ dotnet build
 
 Expected: Build succeeded.
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 3: Commit**
 
 ```bash
 git add -A
@@ -1653,11 +1671,506 @@ git commit -m "feat: wire up DI, EF Core, and background service in Program.cs"
 
 ---
 
-## Task 12: Initial EF Migration
+## Task 13: SignalR Hub & Progress Reporting
 
 **Files:**
 
-- Create: `src/JobSync.Infrastructure/Migrations/` (auto-generated)
+- Create: `src/JobSync.Api/Hubs/SyncHub.cs`
+- Create: `src/JobSync.Core/Interfaces/ISyncProgressReporter.cs`
+- Create: `src/JobSync.Infrastructure/Services/SyncProgressReporter.cs`
+
+- [ ] **Step 1: Create ISyncProgressReporter interface**
+
+```csharp
+// src/JobSync.Core/Interfaces/ISyncProgressReporter.cs
+namespace JobSync.Core.Interfaces;
+
+public interface ISyncProgressReporter
+{
+    Task ReportProgressAsync(Guid jobId, string stage, int percent, CancellationToken cancellationToken = default);
+    Task ReportCompletedAsync(Guid jobId, CancellationToken cancellationToken = default);
+    Task ReportFailedAsync(Guid jobId, string error, CancellationToken cancellationToken = default);
+}
+```
+
+- [ ] **Step 2: Create SyncHub**
+
+```csharp
+// src/JobSync.Api/Hubs/SyncHub.cs
+using Microsoft.AspNetCore.SignalR;
+
+namespace JobSync.Api.Hubs;
+
+public class SyncHub : Hub
+{
+    public async Task JoinJob(Guid jobId)
+    {
+        await Groups.AddToGroupAsync(Context.ConnectionId, $"sync-{jobId}");
+    }
+
+    public async Task LeaveJob(Guid jobId)
+    {
+        await Groups.RemoveFromGroupAsync(Context.ConnectionId, $"sync-{jobId}");
+    }
+}
+```
+
+- [ ] **Step 3: Create SyncProgressReporter**
+
+```csharp
+// src/JobSync.Infrastructure/Services/SyncProgressReporter.cs
+using JobSync.Core.Interfaces;
+using JobSync.Infrastructure.Data;
+using Microsoft.AspNetCore.SignalR;
+using Microsoft.EntityFrameworkCore;
+
+namespace JobSync.Infrastructure.Services;
+
+public class SyncProgressReporter : ISyncProgressReporter
+{
+    private readonly IHubContext<Api.Hubs.SyncHub> _hubContext;
+    private readonly AppDbContext _dbContext;
+
+    public SyncProgressReporter(IHubContext<Api.Hubs.SyncHub> hubContext, AppDbContext dbContext)
+    {
+        _hubContext = hubContext;
+        _dbContext = dbContext;
+    }
+
+    public async Task ReportProgressAsync(Guid jobId, string stage, int percent, CancellationToken cancellationToken = default)
+    {
+        var job = await _dbContext.SyncJobs.FirstOrDefaultAsync(j => j.Id == jobId, cancellationToken);
+        if (job != null)
+        {
+            job.Stage = stage;
+            job.Progress = percent;
+            await _dbContext.SaveChangesAsync(cancellationToken);
+        }
+
+        await _hubContext.Clients.Group($"sync-{jobId}")
+            .SendAsync("SyncProgress", stage, percent, cancellationToken);
+    }
+
+    public async Task ReportCompletedAsync(Guid jobId, CancellationToken cancellationToken = default)
+    {
+        await _hubContext.Clients.Group($"sync-{jobId}")
+            .SendAsync("SyncCompleted", cancellationToken);
+    }
+
+    public async Task ReportFailedAsync(Guid jobId, string error, CancellationToken cancellationToken = default)
+    {
+        await _hubContext.Clients.Group($"sync-{jobId}")
+            .SendAsync("SyncFailed", error, cancellationToken);
+    }
+}
+```
+
+- [ ] **Step 4: Verify build**
+
+```bash
+dotnet build
+```
+
+Expected: Build succeeded.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add -A
+git commit -m "feat: add SignalR hub and progress reporter"
+```
+
+---
+
+## Task 14: Update Orchestrator with Progress Reporting
+
+**Files:**
+
+- Modify: `src/JobSync.Core/Interfaces/ISyncOrchestrator.cs`
+- Modify: `src/JobSync.Infrastructure/Services/SyncOrchestrator.cs`
+
+- [ ] **Step 1: Update ISyncOrchestrator to accept progress reporter and jobId**
+
+```csharp
+// src/JobSync.Core/Interfaces/ISyncOrchestrator.cs
+using JobSync.Core.Models;
+
+namespace JobSync.Core.Interfaces;
+
+public interface ISyncOrchestrator
+{
+    Task<List<JobApplication>> ExecuteSyncAsync(Guid jobId, Guid userId, ISyncProgressReporter progressReporter, CancellationToken cancellationToken = default);
+}
+```
+
+- [ ] **Step 2: Update SyncOrchestrator to emit progress**
+
+```csharp
+// src/JobSync.Infrastructure/Services/SyncOrchestrator.cs
+using JobSync.Core.Interfaces;
+using JobSync.Core.Models;
+
+namespace JobSync.Infrastructure.Services;
+
+public class SyncOrchestrator : ISyncOrchestrator
+{
+    private readonly IGmailService _gmailService;
+    private readonly IGeminiService _geminiService;
+    private const int BatchSize = 20;
+
+    public SyncOrchestrator(IGmailService gmailService, IGeminiService geminiService)
+    {
+        _gmailService = gmailService;
+        _geminiService = geminiService;
+    }
+
+    public async Task<List<JobApplication>> ExecuteSyncAsync(Guid jobId, Guid userId, ISyncProgressReporter progressReporter, CancellationToken cancellationToken = default)
+    {
+        await progressReporter.ReportProgressAsync(jobId, "Fetching emails", 5, cancellationToken);
+
+        var emails = await _gmailService.FetchEmailsAsync(userId, cancellationToken);
+
+        if (emails.Count == 0)
+            return new List<JobApplication>();
+
+        var allApplications = new List<JobApplication>();
+        var batches = emails.Chunk(BatchSize).ToList();
+        var totalBatches = batches.Count;
+
+        for (var i = 0; i < totalBatches; i++)
+        {
+            var percent = 10 + (int)((80.0 / totalBatches) * i);
+            await progressReporter.ReportProgressAsync(jobId, $"Processing batch {i + 1}/{totalBatches}", percent, cancellationToken);
+
+            var batchResults = await _geminiService.ClassifyBatchAsync(batches[i].ToList(), cancellationToken);
+            allApplications.AddRange(batchResults);
+        }
+
+        if (allApplications.Count == 0)
+            return new List<JobApplication>();
+
+        await progressReporter.ReportProgressAsync(jobId, "Deduplicating results", 90, cancellationToken);
+
+        var deduplicated = await _geminiService.DeduplicateAsync(allApplications, cancellationToken);
+
+        await progressReporter.ReportProgressAsync(jobId, "Done", 100, cancellationToken);
+
+        return deduplicated;
+    }
+}
+```
+
+- [ ] **Step 3: Update SyncOrchestrator tests**
+
+```csharp
+// tests/JobSync.Infrastructure.Tests/Services/SyncOrchestratorTests.cs
+using JobSync.Core.Interfaces;
+using JobSync.Core.Models;
+using JobSync.Infrastructure.Services;
+using NSubstitute;
+
+namespace JobSync.Infrastructure.Tests.Services;
+
+public class SyncOrchestratorTests
+{
+    [Fact]
+    public async Task ExecuteSyncAsync_ReturnsEmpty_WhenNoEmails()
+    {
+        var gmailService = Substitute.For<IGmailService>();
+        var geminiService = Substitute.For<IGeminiService>();
+        var progressReporter = Substitute.For<ISyncProgressReporter>();
+
+        gmailService.FetchEmailsAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns(new List<EmailMessage>());
+
+        var orchestrator = new SyncOrchestrator(gmailService, geminiService);
+        var jobId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+
+        var result = await orchestrator.ExecuteSyncAsync(jobId, userId, progressReporter);
+
+        Assert.Empty(result);
+        await progressReporter.Received(1).ReportProgressAsync(jobId, "Fetching emails", 5, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ExecuteSyncAsync_BatchesEmailsAndReportsProgress()
+    {
+        var gmailService = Substitute.For<IGmailService>();
+        var geminiService = Substitute.For<IGeminiService>();
+        var progressReporter = Substitute.For<ISyncProgressReporter>();
+
+        var emails = Enumerable.Range(1, 25)
+            .Select(i => new EmailMessage { Subject = $"Email {i}", Body = "body", From = "test@test.com", Date = DateTime.UtcNow })
+            .ToList();
+
+        gmailService.FetchEmailsAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns(emails);
+
+        var batchResult = new List<JobApplication>
+        {
+            new() { CompanyName = "Company A", JobRole = "Dev", AppliedDate = "2026-04-01", Status = "applied" }
+        };
+
+        geminiService.ClassifyBatchAsync(Arg.Any<List<EmailMessage>>(), Arg.Any<CancellationToken>())
+            .Returns(batchResult);
+
+        geminiService.DeduplicateAsync(Arg.Any<List<JobApplication>>(), Arg.Any<CancellationToken>())
+            .Returns(batchResult);
+
+        var orchestrator = new SyncOrchestrator(gmailService, geminiService);
+        var jobId = Guid.NewGuid();
+
+        var result = await orchestrator.ExecuteSyncAsync(jobId, Guid.NewGuid(), progressReporter);
+
+        Assert.Single(result);
+
+        // Verify progress was reported: fetch + 2 batches + deduplicate + done
+        await progressReporter.Received(5).ReportProgressAsync(jobId, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>());
+    }
+}
+```
+
+- [ ] **Step 4: Run tests**
+
+```bash
+dotnet test tests/JobSync.Infrastructure.Tests --filter "SyncOrchestratorTests"
+```
+
+Expected: PASS.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add -A
+git commit -m "feat: add progress reporting to sync orchestrator"
+```
+
+---
+
+## Task 15: Update Background Worker with SignalR
+
+**Files:**
+
+- Modify: `src/JobSync.Worker/SyncBackgroundService.cs`
+
+- [ ] **Step 1: Update SyncBackgroundService to use progress reporter**
+
+```csharp
+// src/JobSync.Worker/SyncBackgroundService.cs
+using System.Text.Json;
+using JobSync.Core.Entities;
+using JobSync.Core.Enums;
+using JobSync.Core.Interfaces;
+using JobSync.Infrastructure.Data;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+
+namespace JobSync.Worker;
+
+public class SyncBackgroundService : BackgroundService
+{
+    private readonly IServiceScopeFactory _scopeFactory;
+    private readonly ILogger<SyncBackgroundService> _logger;
+    private static readonly TimeSpan PollingInterval = TimeSpan.FromSeconds(5);
+
+    public SyncBackgroundService(IServiceScopeFactory scopeFactory, ILogger<SyncBackgroundService> logger)
+    {
+        _scopeFactory = scopeFactory;
+        _logger = logger;
+    }
+
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        while (!stoppingToken.IsCancellationRequested)
+        {
+            await ProcessPendingJobsAsync(stoppingToken);
+            await Task.Delay(PollingInterval, stoppingToken);
+        }
+    }
+
+    public async Task ProcessPendingJobsAsync(CancellationToken cancellationToken)
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var orchestrator = scope.ServiceProvider.GetRequiredService<ISyncOrchestrator>();
+        var progressReporter = scope.ServiceProvider.GetRequiredService<ISyncProgressReporter>();
+
+        var pendingJobs = await dbContext.SyncJobs
+            .Where(j => j.Status == SyncJobStatus.Pending)
+            .ToListAsync(cancellationToken);
+
+        foreach (var job in pendingJobs)
+        {
+            try
+            {
+                job.Status = SyncJobStatus.Processing;
+                await dbContext.SaveChangesAsync(cancellationToken);
+
+                var results = await orchestrator.ExecuteSyncAsync(job.Id, job.UserId, progressReporter, cancellationToken);
+
+                job.Result = JsonSerializer.SerializeToDocument(results);
+                job.Status = SyncJobStatus.Completed;
+                await dbContext.SaveChangesAsync(cancellationToken);
+
+                await progressReporter.ReportCompletedAsync(job.Id, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Sync job {JobId} failed", job.Id);
+                job.Status = SyncJobStatus.Failed;
+                job.Error = ex.Message;
+                await dbContext.SaveChangesAsync(cancellationToken);
+
+                await progressReporter.ReportFailedAsync(job.Id, ex.Message, cancellationToken);
+            }
+        }
+    }
+}
+```
+
+- [ ] **Step 2: Verify build**
+
+```bash
+dotnet build
+```
+
+Expected: Build succeeded.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add -A
+git commit -m "feat: integrate SignalR progress reporting in background worker"
+```
+
+---
+
+## Task 16: Update Program.cs with SignalR
+
+**Files:**
+
+- Modify: `src/JobSync.Api/Program.cs`
+
+- [ ] **Step 1: Update Program.cs to register SignalR and progress reporter**
+
+```csharp
+// src/JobSync.Api/Program.cs
+using JobSync.Api.Hubs;
+using JobSync.Core.Interfaces;
+using JobSync.Infrastructure.Data;
+using JobSync.Infrastructure.Services;
+using JobSync.Worker;
+using Microsoft.EntityFrameworkCore;
+
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddControllers();
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen();
+builder.Services.AddSignalR();
+
+builder.Services.AddDbContext<AppDbContext>(options =>
+    options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
+
+builder.Services.AddScoped<IGmailService, GmailService>();
+builder.Services.AddScoped<IGeminiService, GeminiService>();
+builder.Services.AddScoped<ISyncOrchestrator, SyncOrchestrator>();
+builder.Services.AddScoped<ISyncProgressReporter, SyncProgressReporter>();
+builder.Services.AddHostedService<SyncBackgroundService>();
+
+builder.Services.AddCors(options =>
+{
+    options.AddDefaultPolicy(policy =>
+    {
+        policy.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader();
+    });
+});
+
+var app = builder.Build();
+
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI();
+}
+
+app.UseCors();
+app.MapControllers();
+app.MapHub<SyncHub>("/hubs/sync");
+
+app.Run();
+```
+
+- [ ] **Step 2: Verify build**
+
+```bash
+dotnet build
+```
+
+Expected: Build succeeded.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add -A
+git commit -m "feat: register SignalR hub and progress reporter in DI"
+```
+
+---
+
+## Task 17: Update SyncController with Progress Fields
+
+**Files:**
+
+- Modify: `src/JobSync.Api/Controllers/SyncController.cs`
+
+- [ ] **Step 1: Update GetStatus to include stage and percent**
+
+```csharp
+    [HttpGet("{jobId:guid}")]
+    public async Task<IActionResult> GetStatus(Guid jobId)
+    {
+        var job = await _dbContext.SyncJobs.FirstOrDefaultAsync(j => j.Id == jobId);
+        if (job == null)
+            return NotFound();
+
+        return Ok(new
+        {
+            jobId = job.Id,
+            status = job.Status.ToString().ToLowerInvariant(),
+            stage = job.Stage,
+            percent = job.Progress,
+            result = job.Result,
+            error = job.Error
+        });
+    }
+```
+
+- [ ] **Step 2: Run tests**
+
+```bash
+dotnet test tests/JobSync.Api.Tests --filter "SyncControllerTests"
+```
+
+Expected: PASS.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add -A
+git commit -m "feat: include stage and percent in sync status response"
+```
+
+---
+
+## Task 18: Initial EF Migration
+
+**Files:**
+
+- Create: `src/JobSync.Infrastructure/Data/Migrations/` (auto-generated)
 
 - [ ] **Step 1: Create initial migration**
 
@@ -1682,7 +2195,7 @@ git commit -m "feat: add initial EF Core migration"
 
 ---
 
-## Task 13: Final Integration Verification
+## Task 19: Final Integration Verification
 
 - [ ] **Step 1: Run all tests**
 

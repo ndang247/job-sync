@@ -13,7 +13,7 @@ Job Sync tracks job applications by syncing from a user's Gmail inbox. Users con
 - Batch emails to Gemini, deduplicate within batch + final merge pass across batches
 - REST API with controllers, .NET 10
 - Frontend-agnostic API (React Native/Expo likely, but API works with any client)
-- Async processing with polling pattern
+- Async processing with SignalR real-time progress (polling as fallback)
 
 ## Data Model
 
@@ -33,16 +33,18 @@ Job Sync tracks job applications by syncing from a user's Gmail inbox. Users con
 
 ### SyncJobs
 
-| Column    | Type        | Notes                                  |
-| --------- | ----------- | -------------------------------------- |
-| Id        | UUID        | PK                                     |
-| UserId    | UUID        | FK → Users                             |
-| Status    | varchar(20) | pending, processing, completed, failed |
-| Result    | jsonb       | array of job applications              |
-| Error     | text        | error message if failed                |
-| CreatedAt | timestamp   |                                        |
-| UpdatedAt | timestamp   |                                        |
-| DeletedAt | timestamp?  | soft delete                            |
+| Column    | Type         | Notes                                  |
+| --------- | ------------ | -------------------------------------- |
+| Id        | UUID         | PK                                     |
+| UserId    | UUID         | FK → Users                             |
+| Status    | varchar(20)  | pending, processing, completed, failed |
+| Progress  | int          | 0-100 percentage                       |
+| Stage     | varchar(100) | current stage label                    |
+| Result    | jsonb        | array of job applications              |
+| Error     | text         | error message if failed                |
+| CreatedAt | timestamp    |                                        |
+| UpdatedAt | timestamp    |                                        |
+| DeletedAt | timestamp?   | soft delete                            |
 
 ### Result JSON Shape
 
@@ -128,6 +130,51 @@ JobSync/
 - Google.Apis.Gmail.v1 (Gmail SDK)
 - Google AI SDK for .NET (Gemini)
 - `BackgroundService` for async job processing
+- `Microsoft.AspNetCore.SignalR` for real-time progress
+
+## Real-time Progress (SignalR)
+
+### Hub
+
+Endpoint: `/hubs/sync`
+
+### Client → Server Methods
+
+| Method   | Params       | Description                                  |
+| -------- | ------------ | -------------------------------------------- |
+| JoinJob  | jobId (Guid) | Join group `sync-{jobId}` to receive updates |
+| LeaveJob | jobId (Guid) | Leave group                                  |
+
+### Server → Client Methods
+
+| Method        | Params                        | Description                               |
+| ------------- | ----------------------------- | ----------------------------------------- |
+| SyncProgress  | stage (string), percent (int) | Progress update                           |
+| SyncCompleted | —                             | Job done, client fetches results via HTTP |
+| SyncFailed    | error (string)                | Job failed                                |
+
+### Progress Stages
+
+| Stage                 | Percent              |
+| --------------------- | -------------------- |
+| Fetching emails       | 5%                   |
+| Processing batch N/M  | Evenly split 10%–90% |
+| Deduplicating results | 90%                  |
+| Done                  | 100%                 |
+
+### Flow
+
+1. Client connects to `/hubs/sync`
+2. Client calls `POST /api/sync` → gets jobId
+3. Client invokes `JoinJob(jobId)`
+4. Backend pushes `SyncProgress` events as processing happens
+5. Backend pushes `SyncCompleted` when done
+6. Client calls `GET /api/sync/{jobId}` to fetch results
+7. Client invokes `LeaveJob(jobId)` or disconnects
+
+### Fallback
+
+Polling endpoint `GET /api/sync/{jobId}` still works — response includes `stage` and `percent` fields for clients that can't use SignalR.
 
 ## Gemini Prompt Strategy
 
