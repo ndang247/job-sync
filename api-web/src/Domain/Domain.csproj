@@ -1,0 +1,12 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>api_web.Domain</RootNamespace>
+    <AssemblyName>api_web.Domain</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MediatR.Contracts" />
+  </ItemGroup>
+
+</Project>
