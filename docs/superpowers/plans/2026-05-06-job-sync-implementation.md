@@ -20,7 +20,7 @@ api-web/
 │   ├── appsettings.json
 │   ├── appsettings.Development.json
 │   ├── Controllers/
-│   │   ├── AuthController.cs
+│   │   ├── MailConnectController.cs
 │   │   └── SyncController.cs
 │   ├── Hubs/
 │   │   └── SyncHub.cs
@@ -889,12 +889,17 @@ git commit -m "feat: implement background worker for async sync job processing"
 
 ---
 
-## Task 10: Auth Controller
+## Task 10: Mail Connect Controller ✅ COMPLETED
+
+> Renamed from AuthController to MailConnectController — no auth implementation yet,
+> endpoint is specific to Gmail connection for extensibility.
+> Route: `api/mail/gmail` with `GET url` and `POST connect` endpoints.
+> Request DTO renamed to `GmailConnectRequest`.
 
 **Files:**
 
-- Create: `web-api/Controllers/AuthController.cs`
-- Create: `tests/web-api.tests/Controllers/AuthControllerTests.cs`
+- Create: `web-api/Controllers/MailConnectController.cs`
+- Create: `tests/web-api.tests/Controllers/MailConnectControllerTests.cs`
 
 - [ ] **Step 1: Write failing test**
 

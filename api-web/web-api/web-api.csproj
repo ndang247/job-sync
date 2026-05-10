@@ -9,6 +9,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Google.Apis.Gmail.v1" Version="1.74.0.4134" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.7" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.7">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
@@ -20,6 +21,7 @@
     <ProjectReference Include="..\core\core.csproj" />
     <ProjectReference Include="..\infrastructure\infrastructure.csproj" />
     <ProjectReference Include="..\worker\worker.csproj" />
+    <ProjectReference Include="..\api-contracts\api-contracts.csproj" />
   </ItemGroup>
 
 </Project>
