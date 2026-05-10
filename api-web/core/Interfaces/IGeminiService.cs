@@ -1,0 +1,9 @@
+using core.Models;
+
+namespace core.Interfaces;
+
+public interface IGeminiService
+{
+    Task<List<JobApplication>> ClassifyBatchAsync(List<EmailMessage> emails, CancellationToken cancellationToken = default);
+    Task<List<JobApplication>> DeduplicateAsync(List<JobApplication> applications, CancellationToken cancellationToken = default);
+}

@@ -13,265 +13,161 @@
 ## File Structure
 
 ```
-JobSync/
-├── JobSync.sln
-├── src/
-│   ├── JobSync.Api/
-│   │   ├── Program.cs
-│   │   ├── appsettings.json
-│   │   ├── appsettings.Development.json
-│   │   ├── Controllers/
-│   │   │   ├── AuthController.cs
-│   │   │   └── SyncController.cs
-│   │   ├── Hubs/
-│   │   │   └── SyncHub.cs
-│   │   └── JobSync.Api.csproj
-│   ├── JobSync.Core/
-│   │   ├── Entities/
-│   │   │   ├── BaseEntity.cs
-│   │   │   ├── User.cs
-│   │   │   └── SyncJob.cs
-│   │   ├── Enums/
-│   │   │   └── SyncJobStatus.cs
-│   │   ├── Models/
-│   │   │   └── JobApplication.cs
-│   │   ├── Interfaces/
-│   │   │   ├── IGmailService.cs
-│   │   │   ├── IGeminiService.cs
-│   │   │   ├── ISyncOrchestrator.cs
-│   │   │   └── IUserRepository.cs
-│   │   └── JobSync.Core.csproj
-│   ├── JobSync.Infrastructure/
-│   │   ├── Data/
-│   │   │   ├── AppDbContext.cs
-│   │   │   └── Configurations/
-│   │   │       ├── UserConfiguration.cs
-│   │   │       └── SyncJobConfiguration.cs
-│   │   ├── Services/
-│   │   │   ├── GmailService.cs
-│   │   │   ├── GeminiService.cs
-│   │   │   └── SyncOrchestrator.cs
-│   │   ├── Repositories/
-│   │   │   └── UserRepository.cs
-│   │   └── JobSync.Infrastructure.csproj
-│   └── JobSync.Worker/
-│       ├── SyncBackgroundService.cs
-│       └── JobSync.Worker.csproj
-└── tests/
-    ├── JobSync.Api.Tests/
-    │   ├── Controllers/
-    │   │   ├── AuthControllerTests.cs
-    │   │   └── SyncControllerTests.cs
-    │   └── JobSync.Api.Tests.csproj
-    ├── JobSync.Infrastructure.Tests/
-    │   ├── Services/
-    │   │   ├── GeminiServiceTests.cs
-    │   │   └── SyncOrchestratorTests.cs
-    │   └── JobSync.Infrastructure.Tests.csproj
-    └── JobSync.Worker.Tests/
-        ├── SyncBackgroundServiceTests.cs
-        └── JobSync.Worker.Tests.csproj
+api-web/
+├── api-web.slnx
+├── web-api/
+│   ├── Program.cs
+│   ├── appsettings.json
+│   ├── appsettings.Development.json
+│   ├── Controllers/
+│   │   ├── AuthController.cs
+│   │   └── SyncController.cs
+│   ├── Hubs/
+│   │   └── SyncHub.cs
+│   └── web-api.csproj
+├── core/
+│   ├── Entities/
+│   │   ├── BaseEntity.cs
+│   │   ├── User.cs
+│   │   └── SyncJob.cs
+│   ├── Enums/
+│   │   └── SyncJobStatus.cs
+│   ├── Models/
+│   │   └── JobApplication.cs
+│   ├── Interfaces/
+│   │   ├── IGmailService.cs
+│   │   ├── IGeminiService.cs
+│   │   ├── ISyncOrchestrator.cs
+│   │   └── ISyncProgressReporter.cs
+│   └── core.csproj
+├── infrastructure/
+│   ├── Data/
+│   │   ├── AppDbContext.cs
+│   │   └── Configurations/
+│   │       ├── UserConfiguration.cs
+│   │       └── SyncJobConfiguration.cs
+│   ├── Services/
+│   │   ├── GmailService.cs
+│   │   ├── GeminiService.cs
+│   │   ├── SyncOrchestrator.cs
+│   │   └── SyncProgressReporter.cs
+│   └── infrastructure.csproj
+└── worker/
+    ├── SyncBackgroundService.cs
+    └── worker.csproj
 ```
 
 ---
 
-## Task 1: Solution Scaffolding
+## Task 1: Solution Scaffolding ✅ COMPLETED
 
-**Files:**
-
-- Create: `JobSync.sln`
-- Create: `src/JobSync.Api/JobSync.Api.csproj`
-- Create: `src/JobSync.Core/JobSync.Core.csproj`
-- Create: `src/JobSync.Infrastructure/JobSync.Infrastructure.csproj`
-- Create: `src/JobSync.Worker/JobSync.Worker.csproj`
-- Create: `tests/JobSync.Api.Tests/JobSync.Api.Tests.csproj`
-- Create: `tests/JobSync.Infrastructure.Tests/JobSync.Infrastructure.Tests.csproj`
-- Create: `tests/JobSync.Worker.Tests/JobSync.Worker.Tests.csproj`
-
-- [ ] **Step 1: Create solution and projects**
-
-```bash
-dotnet new sln -n JobSync
-mkdir -p src tests
-
-dotnet new webapi -n JobSync.Api -o src/JobSync.Api --no-https
-dotnet new classlib -n JobSync.Core -o src/JobSync.Core
-dotnet new classlib -n JobSync.Infrastructure -o src/JobSync.Infrastructure
-dotnet new classlib -n JobSync.Worker -o src/JobSync.Worker
-
-dotnet new xunit -n JobSync.Api.Tests -o tests/JobSync.Api.Tests
-dotnet new xunit -n JobSync.Infrastructure.Tests -o tests/JobSync.Infrastructure.Tests
-dotnet new xunit -n JobSync.Worker.Tests -o tests/JobSync.Worker.Tests
-```
-
-- [ ] **Step 2: Add projects to solution**
-
-```bash
-dotnet sln add src/JobSync.Api/JobSync.Api.csproj
-dotnet sln add src/JobSync.Core/JobSync.Core.csproj
-dotnet sln add src/JobSync.Infrastructure/JobSync.Infrastructure.csproj
-dotnet sln add src/JobSync.Worker/JobSync.Worker.csproj
-dotnet sln add tests/JobSync.Api.Tests/JobSync.Api.Tests.csproj
-dotnet sln add tests/JobSync.Infrastructure.Tests/JobSync.Infrastructure.Tests.csproj
-dotnet sln add tests/JobSync.Worker.Tests/JobSync.Worker.Tests.csproj
-```
-
-- [ ] **Step 3: Add project references**
-
-```bash
-# Core has no dependencies
-# Infrastructure depends on Core
-dotnet add src/JobSync.Infrastructure/JobSync.Infrastructure.csproj reference src/JobSync.Core/JobSync.Core.csproj
-
-# Worker depends on Core and Infrastructure
-dotnet add src/JobSync.Worker/JobSync.Worker.csproj reference src/JobSync.Core/JobSync.Core.csproj
-dotnet add src/JobSync.Worker/JobSync.Worker.csproj reference src/JobSync.Infrastructure/JobSync.Infrastructure.csproj
-
-# Api depends on Core, Infrastructure, and Worker
-dotnet add src/JobSync.Api/JobSync.Api.csproj reference src/JobSync.Core/JobSync.Core.csproj
-dotnet add src/JobSync.Api/JobSync.Api.csproj reference src/JobSync.Infrastructure/JobSync.Infrastructure.csproj
-dotnet add src/JobSync.Api/JobSync.Api.csproj reference src/JobSync.Worker/JobSync.Worker.csproj
-
-# Test projects reference their targets
-dotnet add tests/JobSync.Api.Tests/JobSync.Api.Tests.csproj reference src/JobSync.Api/JobSync.Api.csproj
-dotnet add tests/JobSync.Infrastructure.Tests/JobSync.Infrastructure.Tests.csproj reference src/JobSync.Infrastructure/JobSync.Infrastructure.csproj
-dotnet add tests/JobSync.Worker.Tests/JobSync.Worker.Tests.csproj reference src/JobSync.Worker/JobSync.Worker.csproj
-```
-
-- [ ] **Step 4: Add NuGet packages**
-
-```bash
-# Infrastructure - EF Core + Npgsql
-dotnet add src/JobSync.Infrastructure/JobSync.Infrastructure.csproj package Npgsql.EntityFrameworkCore.PostgreSQL
-dotnet add src/JobSync.Infrastructure/JobSync.Infrastructure.csproj package Microsoft.EntityFrameworkCore
-
-# Infrastructure - Gmail
-dotnet add src/JobSync.Infrastructure/JobSync.Infrastructure.csproj package Google.Apis.Gmail.v1
-dotnet add src/JobSync.Infrastructure/JobSync.Infrastructure.csproj package Google.Apis.Auth
-
-# Infrastructure - Gemini
-dotnet add src/JobSync.Infrastructure/JobSync.Infrastructure.csproj package Google_GenerativeAI
-
-# Api - EF Core Design for migrations
-dotnet add src/JobSync.Api/JobSync.Api.csproj package Microsoft.EntityFrameworkCore.Design
-
-# Test projects - mocking
-dotnet add tests/JobSync.Api.Tests/JobSync.Api.Tests.csproj package NSubstitute
-dotnet add tests/JobSync.Infrastructure.Tests/JobSync.Infrastructure.Tests.csproj package NSubstitute
-dotnet add tests/JobSync.Worker.Tests/JobSync.Worker.Tests.csproj package NSubstitute
-dotnet add tests/JobSync.Api.Tests/JobSync.Api.Tests.csproj package Microsoft.AspNetCore.Mvc.Testing
-```
-
-- [ ] **Step 5: Verify build**
-
-```bash
-dotnet build
-```
-
-Expected: Build succeeded with 0 errors.
-
-- [ ] **Step 6: Commit**
-
-```bash
-git add -A
-git commit -m "feat: scaffold solution structure with project references and packages"
-```
+> Scaffolded using `dotnet new webapi` + `dotnet new classlib` templates.
+> Projects: `web-api/` (API), `core/` (domain), `infrastructure/` (data+services), `worker/` (background).
+> Solution: `api-web.slnx`. References: `web-api → worker → infrastructure → core`.
 
 ---
 
-## Task 2: Core Domain Models
+## Task 2: Core Domain Models ✅ COMPLETED
+
+> Created: `core/Entities/BaseEntity.cs`, `User.cs`, `SyncJob.cs`, `core/Enums/SyncJobStatus.cs`, `core/Models/JobApplication.cs`.
+> Namespaces use `core.*` (e.g. `core.Entities`, `core.Enums`, `core.Models`).
+
+---
+
+## Task 3: Core Interfaces ✅ COMPLETED
+
+> Created: `core/Interfaces/IGmailService.cs`, `IGeminiService.cs`, `ISyncOrchestrator.cs`, `ISyncProgressReporter.cs`.
+> `EmailMessage` class lives in `IGmailService.cs`. `ISyncOrchestrator` signature includes `jobId`, `userId`, and `ISyncProgressReporter`.
+
+---
+
+## Task 4: Database Context & Configuration ✅ COMPLETED
+
+> Created: `infrastructure/Data/AppDbContext.cs`, `Configurations/UserConfiguration.cs`, `SyncJobConfiguration.cs`.
+> Namespaces use `infrastructure.Data` / `infrastructure.Data.Configurations`.
+> Infrastructure stub services also created (throw `NotImplementedException`).
+
+---
+
+## Task 5: PostgreSQL Wiring & User Secrets
 
 **Files:**
 
-- Create: `src/JobSync.Core/Entities/BaseEntity.cs`
-- Create: `src/JobSync.Core/Entities/User.cs`
-- Create: `src/JobSync.Core/Entities/SyncJob.cs`
-- Create: `src/JobSync.Core/Enums/SyncJobStatus.cs`
-- Create: `src/JobSync.Core/Models/JobApplication.cs`
+- Modify: `web-api/Program.cs`
+- Modify: `web-api/appsettings.json`
 
-- [ ] **Step 1: Create BaseEntity**
+- [ ] **Step 1: Init user secrets for web-api project**
 
-```csharp
-// src/JobSync.Core/Entities/BaseEntity.cs
-namespace JobSync.Core.Entities;
+```bash
+cd web-api
+dotnet user-secrets init
+dotnet user-secrets set "ConnectionStrings:DefaultConnection" "Host=localhost;Database=jobsync;Username=postgres;Password=YOUR_PASSWORD"
+```
 
-public abstract class BaseEntity
+- [ ] **Step 2: Add placeholder in appsettings.json (no real credentials)**
+
+```json
 {
-    public Guid Id { get; set; }
-    public DateTime CreatedAt { get; set; }
-    public DateTime UpdatedAt { get; set; }
-    public DateTime? DeletedAt { get; set; }
+  "Logging": {
+    "LogLevel": {
+      "Default": "Information",
+      "Microsoft.AspNetCore": "Warning"
+    }
+  },
+  "AllowedHosts": "*",
+  "ConnectionStrings": {
+    "DefaultConnection": ""
+  }
 }
 ```
 
-- [ ] **Step 2: Create SyncJobStatus enum**
+- [ ] **Step 3: Wire up EF Core in Program.cs**
 
 ```csharp
-// src/JobSync.Core/Enums/SyncJobStatus.cs
-namespace JobSync.Core.Enums;
+// web-api/Program.cs
+using infrastructure.Data;
+using Microsoft.EntityFrameworkCore;
 
-public enum SyncJobStatus
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddOpenApi();
+
+builder.Services.AddDbContext<AppDbContext>(options =>
+    options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
+
+var app = builder.Build();
+
+if (app.Environment.IsDevelopment())
 {
-    Pending,
-    Processing,
-    Completed,
-    Failed
+    app.MapOpenApi();
 }
+
+app.UseHttpsRedirection();
+app.Run();
 ```
 
-- [ ] **Step 3: Create User entity**
+- [ ] **Step 4: Add EF Core Design package to web-api**
 
-```csharp
-// src/JobSync.Core/Entities/User.cs
-namespace JobSync.Core.Entities;
-
-public class User : BaseEntity
-{
-    public string FirstName { get; set; } = string.Empty;
-    public string LastName { get; set; } = string.Empty;
-    public string AccessToken { get; set; } = string.Empty;
-    public string RefreshToken { get; set; } = string.Empty;
-    public DateTime TokenExpiresAt { get; set; }
-}
+```bash
+cd web-api
+dotnet add package Microsoft.EntityFrameworkCore.Design
 ```
 
-- [ ] **Step 4: Create SyncJob entity**
+- [ ] **Step 5: Create initial migration**
 
-```csharp
-// src/JobSync.Core/Entities/SyncJob.cs
-using System.Text.Json;
-using JobSync.Core.Enums;
-
-namespace JobSync.Core.Entities;
-
-public class SyncJob : BaseEntity
-{
-    public Guid UserId { get; set; }
-    public User User { get; set; } = null!;
-    public SyncJobStatus Status { get; set; } = SyncJobStatus.Pending;
-    public int Progress { get; set; }
-    public string? Stage { get; set; }
-    public JsonDocument? Result { get; set; }
-    public string? Error { get; set; }
-}
+```bash
+dotnet ef migrations add InitialCreate --project infrastructure --startup-project web-api --output-dir Data/Migrations
 ```
 
-- [ ] **Step 5: Create JobApplication model (DTO for Gemini response)**
+- [ ] **Step 6: Apply migration to verify DB connectivity**
 
-```csharp
-// src/JobSync.Core/Models/JobApplication.cs
-namespace JobSync.Core.Models;
-
-public class JobApplication
-{
-    public string CompanyName { get; set; } = string.Empty;
-    public string JobRole { get; set; } = string.Empty;
-    public string AppliedDate { get; set; } = string.Empty;
-    public string Status { get; set; } = "applied";
-}
+```bash
+dotnet ef database update --project infrastructure --startup-project web-api
 ```
 
-- [ ] **Step 6: Verify build**
+Expected: Tables `Users` and `SyncJobs` created in PostgreSQL.
+
+- [ ] **Step 7: Verify build**
 
 ```bash
 dotnet build
@@ -279,242 +175,34 @@ dotnet build
 
 Expected: Build succeeded.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
 git add -A
-git commit -m "feat: add core domain models and enums"
+git commit -m "feat: wire up PostgreSQL with EF Core and user secrets"
 ```
 
 ---
 
-## Task 3: Core Interfaces
+## Task 6: Gmail Service
 
 **Files:**
 
-- Create: `src/JobSync.Core/Interfaces/IGmailService.cs`
-- Create: `src/JobSync.Core/Interfaces/IGeminiService.cs`
-- Create: `src/JobSync.Core/Interfaces/ISyncOrchestrator.cs`
-
-- [ ] **Step 1: Create IGmailService**
-
-```csharp
-// src/JobSync.Core/Interfaces/IGmailService.cs
-namespace JobSync.Core.Interfaces;
-
-public class EmailMessage
-{
-    public string Subject { get; set; } = string.Empty;
-    public string Body { get; set; } = string.Empty;
-    public string From { get; set; } = string.Empty;
-    public DateTime Date { get; set; }
-}
-
-public interface IGmailService
-{
-    Task<List<EmailMessage>> FetchEmailsAsync(Guid userId, CancellationToken cancellationToken = default);
-}
-```
-
-- [ ] **Step 2: Create IGeminiService**
-
-```csharp
-// src/JobSync.Core/Interfaces/IGeminiService.cs
-using JobSync.Core.Models;
-
-namespace JobSync.Core.Interfaces;
-
-public interface IGeminiService
-{
-    Task<List<JobApplication>> ClassifyBatchAsync(List<EmailMessage> emails, CancellationToken cancellationToken = default);
-    Task<List<JobApplication>> DeduplicateAsync(List<JobApplication> applications, CancellationToken cancellationToken = default);
-}
-```
-
-- [ ] **Step 3: Create ISyncOrchestrator**
-
-```csharp
-// src/JobSync.Core/Interfaces/ISyncOrchestrator.cs
-using JobSync.Core.Models;
-
-namespace JobSync.Core.Interfaces;
-
-public interface ISyncOrchestrator
-{
-    Task<List<JobApplication>> ExecuteSyncAsync(Guid userId, CancellationToken cancellationToken = default);
-}
-```
-
-- [ ] **Step 4: Verify build**
-
-```bash
-dotnet build
-```
-
-Expected: Build succeeded.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add -A
-git commit -m "feat: add core service interfaces"
-```
-
----
-
-## Task 4: Database Context & Configuration
-
-**Files:**
-
-- Create: `src/JobSync.Infrastructure/Data/AppDbContext.cs`
-- Create: `src/JobSync.Infrastructure/Data/Configurations/UserConfiguration.cs`
-- Create: `src/JobSync.Infrastructure/Data/Configurations/SyncJobConfiguration.cs`
-
-- [ ] **Step 1: Create AppDbContext**
-
-```csharp
-// src/JobSync.Infrastructure/Data/AppDbContext.cs
-using JobSync.Core.Entities;
-using Microsoft.EntityFrameworkCore;
-
-namespace JobSync.Infrastructure.Data;
-
-public class AppDbContext : DbContext
-{
-    public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
-
-    public DbSet<User> Users => Set<User>();
-    public DbSet<SyncJob> SyncJobs => Set<SyncJob>();
-
-    protected override void OnModelCreating(ModelBuilder modelBuilder)
-    {
-        modelBuilder.ApplyConfigurationsFromAssembly(typeof(AppDbContext).Assembly);
-    }
-
-    public override int SaveChanges()
-    {
-        SetTimestamps();
-        return base.SaveChanges();
-    }
-
-    public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
-    {
-        SetTimestamps();
-        return base.SaveChangesAsync(cancellationToken);
-    }
-
-    private void SetTimestamps()
-    {
-        var entries = ChangeTracker.Entries<BaseEntity>();
-        var now = DateTime.UtcNow;
-
-        foreach (var entry in entries)
-        {
-            if (entry.State == EntityState.Added)
-            {
-                entry.Entity.CreatedAt = now;
-                entry.Entity.UpdatedAt = now;
-            }
-            else if (entry.State == EntityState.Modified)
-            {
-                entry.Entity.UpdatedAt = now;
-            }
-        }
-    }
-}
-```
-
-- [ ] **Step 2: Create UserConfiguration**
-
-```csharp
-// src/JobSync.Infrastructure/Data/Configurations/UserConfiguration.cs
-using JobSync.Core.Entities;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Metadata.Builders;
-
-namespace JobSync.Infrastructure.Data.Configurations;
-
-public class UserConfiguration : IEntityTypeConfiguration<User>
-{
-    public void Configure(EntityTypeBuilder<User> builder)
-    {
-        builder.HasKey(u => u.Id);
-        builder.Property(u => u.FirstName).HasMaxLength(100).IsRequired();
-        builder.Property(u => u.LastName).HasMaxLength(100).IsRequired();
-        builder.Property(u => u.AccessToken).IsRequired();
-        builder.Property(u => u.RefreshToken).IsRequired();
-        builder.HasQueryFilter(u => u.DeletedAt == null);
-    }
-}
-```
-
-- [ ] **Step 3: Create SyncJobConfiguration**
-
-```csharp
-// src/JobSync.Infrastructure/Data/Configurations/SyncJobConfiguration.cs
-using JobSync.Core.Entities;
-using JobSync.Core.Enums;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Metadata.Builders;
-
-namespace JobSync.Infrastructure.Data.Configurations;
-
-public class SyncJobConfiguration : IEntityTypeConfiguration<SyncJob>
-{
-    public void Configure(EntityTypeBuilder<SyncJob> builder)
-    {
-        builder.HasKey(s => s.Id);
-        builder.Property(s => s.Status)
-            .HasConversion<string>()
-            .HasMaxLength(20)
-            .IsRequired();
-        builder.Property(s => s.Stage).HasMaxLength(100);
-        builder.Property(s => s.Result).HasColumnType("jsonb");
-        builder.HasOne(s => s.User)
-            .WithMany()
-            .HasForeignKey(s => s.UserId)
-            .OnDelete(DeleteBehavior.Cascade);
-        builder.HasQueryFilter(s => s.DeletedAt == null);
-    }
-}
-```
-
-- [ ] **Step 4: Verify build**
-
-```bash
-dotnet build
-```
-
-Expected: Build succeeded.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add -A
-git commit -m "feat: add EF Core DbContext with entity configurations"
-```
-
----
-
-## Task 5: Gmail Service
-
-**Files:**
-
-- Create: `src/JobSync.Infrastructure/Services/GmailService.cs`
-- Create: `tests/JobSync.Infrastructure.Tests/Services/GmailServiceTests.cs`
+- Create: `infrastructure/Services/GmailService.cs`
+- Create: `tests/infrastructure.tests/Services/GmailServiceTests.cs`
 
 - [ ] **Step 1: Write failing test for GmailService**
 
 ```csharp
-// tests/JobSync.Infrastructure.Tests/Services/GmailServiceTests.cs
-using JobSync.Core.Entities;
-using JobSync.Infrastructure.Data;
-using JobSync.Infrastructure.Services;
+// tests/infrastructure.tests/Services/GmailServiceTests.cs
+using core.Entities;
+using infrastructure.Data;
+using infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using NSubstitute;
 
-namespace JobSync.Infrastructure.Tests.Services;
+namespace infrastructure.Tests.Services;
 
 public class GmailServiceTests
 {
@@ -538,7 +226,7 @@ public class GmailServiceTests
 - [ ] **Step 2: Run test to verify it fails**
 
 ```bash
-dotnet test tests/JobSync.Infrastructure.Tests --filter "GmailServiceTests"
+dotnet test tests/infrastructure.Tests --filter "GmailServiceTests"
 ```
 
 Expected: FAIL — `GmailService` class not found.
@@ -546,19 +234,19 @@ Expected: FAIL — `GmailService` class not found.
 - [ ] **Step 3: Implement GmailService**
 
 ```csharp
-// src/JobSync.Infrastructure/Services/GmailService.cs
+// infrastructure/Services/GmailService.cs
 using Google.Apis.Auth.OAuth2;
 using Google.Apis.Auth.OAuth2.Flows;
 using Google.Apis.Auth.OAuth2.Responses;
 using Google.Apis.Gmail.v1;
 using Google.Apis.Gmail.v1.Data;
 using Google.Apis.Services;
-using JobSync.Core.Interfaces;
-using JobSync.Infrastructure.Data;
+using core.Interfaces;
+using infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 
-namespace JobSync.Infrastructure.Services;
+namespace infrastructure.Services;
 
 public class GmailService : IGmailService
 {
@@ -699,7 +387,7 @@ public class GmailService : IGmailService
 - [ ] **Step 4: Run test to verify it passes**
 
 ```bash
-dotnet test tests/JobSync.Infrastructure.Tests --filter "GmailServiceTests"
+dotnet test tests/infrastructure.Tests --filter "GmailServiceTests"
 ```
 
 Expected: PASS.
@@ -713,23 +401,23 @@ git commit -m "feat: implement Gmail service with token refresh"
 
 ---
 
-## Task 6: Gemini Service
+## Task 7: Gemini Service
 
 **Files:**
 
-- Create: `src/JobSync.Infrastructure/Services/GeminiService.cs`
-- Create: `tests/JobSync.Infrastructure.Tests/Services/GeminiServiceTests.cs`
+- Create: `infrastructure/Services/GeminiService.cs`
+- Create: `tests/infrastructure.tests/Services/GeminiServiceTests.cs`
 
 - [ ] **Step 1: Write failing test for batch classification**
 
 ```csharp
-// tests/JobSync.Infrastructure.Tests/Services/GeminiServiceTests.cs
-using JobSync.Core.Interfaces;
-using JobSync.Infrastructure.Services;
+// tests/infrastructure.tests/Services/GeminiServiceTests.cs
+using core.Interfaces;
+using infrastructure.Services;
 using Microsoft.Extensions.Configuration;
 using NSubstitute;
 
-namespace JobSync.Infrastructure.Tests.Services;
+namespace infrastructure.Tests.Services;
 
 public class GeminiServiceTests
 {
@@ -764,7 +452,7 @@ public class GeminiServiceTests
 - [ ] **Step 2: Run test to verify it fails**
 
 ```bash
-dotnet test tests/JobSync.Infrastructure.Tests --filter "GeminiServiceTests"
+dotnet test tests/infrastructure.Tests --filter "GeminiServiceTests"
 ```
 
 Expected: FAIL — `GeminiService` class not found.
@@ -772,14 +460,14 @@ Expected: FAIL — `GeminiService` class not found.
 - [ ] **Step 3: Implement GeminiService**
 
 ````csharp
-// src/JobSync.Infrastructure/Services/GeminiService.cs
+// infrastructure/Services/GeminiService.cs
 using System.Text.Json;
 using GenerativeAI;
-using JobSync.Core.Interfaces;
-using JobSync.Core.Models;
+using core.Interfaces;
+using core.Models;
 using Microsoft.Extensions.Configuration;
 
-namespace JobSync.Infrastructure.Services;
+namespace infrastructure.Services;
 
 public class GeminiService : IGeminiService
 {
@@ -870,7 +558,7 @@ public class GeminiService : IGeminiService
 - [ ] **Step 4: Run test to verify it passes**
 
 ```bash
-dotnet test tests/JobSync.Infrastructure.Tests --filter "GeminiServiceTests"
+dotnet test tests/infrastructure.Tests --filter "GeminiServiceTests"
 ```
 
 Expected: PASS.
@@ -884,23 +572,23 @@ git commit -m "feat: implement Gemini service for email classification and dedup
 
 ---
 
-## Task 7: Sync Orchestrator
+## Task 8: Sync Orchestrator
 
 **Files:**
 
-- Create: `src/JobSync.Infrastructure/Services/SyncOrchestrator.cs`
-- Create: `tests/JobSync.Infrastructure.Tests/Services/SyncOrchestratorTests.cs`
+- Create: `infrastructure/Services/SyncOrchestrator.cs`
+- Create: `tests/infrastructure.tests/Services/SyncOrchestratorTests.cs`
 
 - [ ] **Step 1: Write failing test**
 
 ```csharp
-// tests/JobSync.Infrastructure.Tests/Services/SyncOrchestratorTests.cs
-using JobSync.Core.Interfaces;
-using JobSync.Core.Models;
-using JobSync.Infrastructure.Services;
+// tests/infrastructure.tests/Services/SyncOrchestratorTests.cs
+using core.Interfaces;
+using core.Models;
+using infrastructure.Services;
 using NSubstitute;
 
-namespace JobSync.Infrastructure.Tests.Services;
+namespace infrastructure.Tests.Services;
 
 public class SyncOrchestratorTests
 {
@@ -964,7 +652,7 @@ public class SyncOrchestratorTests
 - [ ] **Step 2: Run test to verify it fails**
 
 ```bash
-dotnet test tests/JobSync.Infrastructure.Tests --filter "SyncOrchestratorTests"
+dotnet test tests/infrastructure.Tests --filter "SyncOrchestratorTests"
 ```
 
 Expected: FAIL — `SyncOrchestrator` not found.
@@ -972,11 +660,11 @@ Expected: FAIL — `SyncOrchestrator` not found.
 - [ ] **Step 3: Implement SyncOrchestrator**
 
 ```csharp
-// src/JobSync.Infrastructure/Services/SyncOrchestrator.cs
-using JobSync.Core.Interfaces;
-using JobSync.Core.Models;
+// infrastructure/Services/SyncOrchestrator.cs
+using core.Interfaces;
+using core.Models;
 
-namespace JobSync.Infrastructure.Services;
+namespace infrastructure.Services;
 
 public class SyncOrchestrator : ISyncOrchestrator
 {
@@ -1019,7 +707,7 @@ public class SyncOrchestrator : ISyncOrchestrator
 - [ ] **Step 4: Run test to verify it passes**
 
 ```bash
-dotnet test tests/JobSync.Infrastructure.Tests --filter "SyncOrchestratorTests"
+dotnet test tests/infrastructure.Tests --filter "SyncOrchestratorTests"
 ```
 
 Expected: PASS.
@@ -1033,30 +721,30 @@ git commit -m "feat: implement sync orchestrator with batching and deduplication
 
 ---
 
-## Task 8: Background Worker
+## Task 9: Background Worker
 
 **Files:**
 
-- Create: `src/JobSync.Worker/SyncBackgroundService.cs`
-- Create: `tests/JobSync.Worker.Tests/SyncBackgroundServiceTests.cs`
+- Create: `worker/SyncBackgroundService.cs`
+- Create: `tests/worker.tests/SyncBackgroundServiceTests.cs`
 
 - [ ] **Step 1: Write failing test**
 
 ```csharp
-// tests/JobSync.Worker.Tests/SyncBackgroundServiceTests.cs
+// tests/worker.tests/SyncBackgroundServiceTests.cs
 using System.Text.Json;
-using JobSync.Core.Entities;
-using JobSync.Core.Enums;
-using JobSync.Core.Interfaces;
-using JobSync.Core.Models;
-using JobSync.Infrastructure.Data;
-using JobSync.Worker;
+using core.Entities;
+using core.Enums;
+using core.Interfaces;
+using core.Models;
+using infrastructure.Data;
+using worker;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
 
-namespace JobSync.Worker.Tests;
+namespace worker.Tests;
 
 public class SyncBackgroundServiceTests
 {
@@ -1107,7 +795,7 @@ public class SyncBackgroundServiceTests
 - [ ] **Step 2: Run test to verify it fails**
 
 ```bash
-dotnet test tests/JobSync.Worker.Tests --filter "SyncBackgroundServiceTests"
+dotnet test tests/worker.Tests --filter "SyncBackgroundServiceTests"
 ```
 
 Expected: FAIL — `SyncBackgroundService` not found.
@@ -1115,18 +803,18 @@ Expected: FAIL — `SyncBackgroundService` not found.
 - [ ] **Step 3: Implement SyncBackgroundService**
 
 ```csharp
-// src/JobSync.Worker/SyncBackgroundService.cs
+// worker/SyncBackgroundService.cs
 using System.Text.Json;
-using JobSync.Core.Entities;
-using JobSync.Core.Enums;
-using JobSync.Core.Interfaces;
-using JobSync.Infrastructure.Data;
+using core.Entities;
+using core.Enums;
+using core.Interfaces;
+using infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
-namespace JobSync.Worker;
+namespace worker;
 
 public class SyncBackgroundService : BackgroundService
 {
@@ -1187,7 +875,7 @@ public class SyncBackgroundService : BackgroundService
 - [ ] **Step 4: Run test to verify it passes**
 
 ```bash
-dotnet test tests/JobSync.Worker.Tests --filter "SyncBackgroundServiceTests"
+dotnet test tests/worker.Tests --filter "SyncBackgroundServiceTests"
 ```
 
 Expected: PASS.
@@ -1201,25 +889,25 @@ git commit -m "feat: implement background worker for async sync job processing"
 
 ---
 
-## Task 9: Auth Controller
+## Task 10: Auth Controller
 
 **Files:**
 
-- Create: `src/JobSync.Api/Controllers/AuthController.cs`
-- Create: `tests/JobSync.Api.Tests/Controllers/AuthControllerTests.cs`
+- Create: `web-api/Controllers/AuthController.cs`
+- Create: `tests/web-api.tests/Controllers/AuthControllerTests.cs`
 
 - [ ] **Step 1: Write failing test**
 
 ```csharp
-// tests/JobSync.Api.Tests/Controllers/AuthControllerTests.cs
-using JobSync.Api.Controllers;
-using JobSync.Infrastructure.Data;
+// tests/web-api.tests/Controllers/AuthControllerTests.cs
+using web_api.Controllers;
+using infrastructure.Data;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using NSubstitute;
 
-namespace JobSync.Api.Tests.Controllers;
+namespace web_api.Tests.Controllers;
 
 public class AuthControllerTests
 {
@@ -1268,7 +956,7 @@ public class AuthControllerTests
 - [ ] **Step 2: Run test to verify it fails**
 
 ```bash
-dotnet test tests/JobSync.Api.Tests --filter "AuthControllerTests"
+dotnet test tests/web_api.Tests --filter "AuthControllerTests"
 ```
 
 Expected: FAIL — `AuthController` not found.
@@ -1276,18 +964,18 @@ Expected: FAIL — `AuthController` not found.
 - [ ] **Step 3: Implement AuthController**
 
 ```csharp
-// src/JobSync.Api/Controllers/AuthController.cs
+// web-api/Controllers/AuthController.cs
 using Google.Apis.Auth.OAuth2;
 using Google.Apis.Auth.OAuth2.Flows;
 using Google.Apis.Auth.OAuth2.Responses;
 using Google.Apis.Gmail.v1;
-using JobSync.Core.Entities;
-using JobSync.Infrastructure.Data;
+using core.Entities;
+using infrastructure.Data;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 
-namespace JobSync.Api.Controllers;
+namespace web_api.Controllers;
 
 [ApiController]
 [Route("api/auth/gmail")]
@@ -1366,7 +1054,7 @@ public class ConnectRequest
 - [ ] **Step 4: Run test to verify it passes**
 
 ```bash
-dotnet test tests/JobSync.Api.Tests --filter "AuthControllerTests"
+dotnet test tests/web_api.Tests --filter "AuthControllerTests"
 ```
 
 Expected: PASS.
@@ -1380,27 +1068,27 @@ git commit -m "feat: implement auth controller with Gmail OAuth connect"
 
 ---
 
-## Task 10: Sync Controller
+## Task 11: Sync Controller
 
 **Files:**
 
-- Create: `src/JobSync.Api/Controllers/SyncController.cs`
-- Create: `tests/JobSync.Api.Tests/Controllers/SyncControllerTests.cs`
+- Create: `web-api/Controllers/SyncController.cs`
+- Create: `tests/web-api.tests/Controllers/SyncControllerTests.cs`
 
 - [ ] **Step 1: Write failing test**
 
 ```csharp
-// tests/JobSync.Api.Tests/Controllers/SyncControllerTests.cs
+// tests/web-api.tests/Controllers/SyncControllerTests.cs
 using System.Text.Json;
-using JobSync.Api.Controllers;
-using JobSync.Core.Entities;
-using JobSync.Core.Enums;
-using JobSync.Core.Models;
-using JobSync.Infrastructure.Data;
+using web_api.Controllers;
+using core.Entities;
+using core.Enums;
+using core.Models;
+using infrastructure.Data;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
-namespace JobSync.Api.Tests.Controllers;
+namespace web_api.Tests.Controllers;
 
 public class SyncControllerTests
 {
@@ -1475,7 +1163,7 @@ public class SyncControllerTests
 - [ ] **Step 2: Run test to verify it fails**
 
 ```bash
-dotnet test tests/JobSync.Api.Tests --filter "SyncControllerTests"
+dotnet test tests/web_api.Tests --filter "SyncControllerTests"
 ```
 
 Expected: FAIL — `SyncController` not found.
@@ -1483,14 +1171,14 @@ Expected: FAIL — `SyncController` not found.
 - [ ] **Step 3: Implement SyncController**
 
 ```csharp
-// src/JobSync.Api/Controllers/SyncController.cs
-using JobSync.Core.Entities;
-using JobSync.Core.Enums;
-using JobSync.Infrastructure.Data;
+// web-api/Controllers/SyncController.cs
+using core.Entities;
+using core.Enums;
+using infrastructure.Data;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
-namespace JobSync.Api.Controllers;
+namespace web_api.Controllers;
 
 [ApiController]
 [Route("api/sync")]
@@ -1549,7 +1237,7 @@ public class StartSyncRequest
 - [ ] **Step 4: Run test to verify it passes**
 
 ```bash
-dotnet test tests/JobSync.Api.Tests --filter "SyncControllerTests"
+dotnet test tests/web_api.Tests --filter "SyncControllerTests"
 ```
 
 Expected: PASS.
@@ -1563,16 +1251,16 @@ git commit -m "feat: implement sync controller with start and polling endpoints"
 
 ---
 
-## Task 11: Configuration Files
+## Task 12: Configuration Files
 
 **Files:**
 
-- Modify: `src/JobSync.Api/appsettings.json`
+- Modify: `web-api/appsettings.json`
 
 - [ ] **Step 1: Configure appsettings.json**
 
 ```json
-// src/JobSync.Api/appsettings.json
+// web-api/appsettings.json
 {
   "Logging": {
     "LogLevel": {
@@ -1602,20 +1290,20 @@ git commit -m "feat: add application configuration"
 
 ---
 
-## Task 12: Initial Program.cs (without SignalR — added in Task 16)
+## Task 13: Initial Program.cs (without SignalR — added in Task 17)
 
 **Files:**
 
-- Modify: `src/JobSync.Api/Program.cs`
+- Modify: `web-api/Program.cs`
 
 - [ ] **Step 1: Configure basic Program.cs**
 
 ```csharp
-// src/JobSync.Api/Program.cs
-using JobSync.Core.Interfaces;
-using JobSync.Infrastructure.Data;
-using JobSync.Infrastructure.Services;
-using JobSync.Worker;
+// web-api/Program.cs
+using core.Interfaces;
+using infrastructure.Data;
+using infrastructure.Services;
+using worker;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -1671,19 +1359,19 @@ git commit -m "feat: wire up DI, EF Core, and background service in Program.cs"
 
 ---
 
-## Task 13: SignalR Hub & Progress Reporting
+## Task 14: SignalR Hub & Progress Reporting
 
 **Files:**
 
-- Create: `src/JobSync.Api/Hubs/SyncHub.cs`
-- Create: `src/JobSync.Core/Interfaces/ISyncProgressReporter.cs`
-- Create: `src/JobSync.Infrastructure/Services/SyncProgressReporter.cs`
+- Create: `web-api/Hubs/SyncHub.cs`
+- Create: `core/Interfaces/ISyncProgressReporter.cs`
+- Create: `infrastructure/Services/SyncProgressReporter.cs`
 
 - [ ] **Step 1: Create ISyncProgressReporter interface**
 
 ```csharp
-// src/JobSync.Core/Interfaces/ISyncProgressReporter.cs
-namespace JobSync.Core.Interfaces;
+// core/Interfaces/ISyncProgressReporter.cs
+namespace core.Interfaces;
 
 public interface ISyncProgressReporter
 {
@@ -1696,10 +1384,10 @@ public interface ISyncProgressReporter
 - [ ] **Step 2: Create SyncHub**
 
 ```csharp
-// src/JobSync.Api/Hubs/SyncHub.cs
+// web-api/Hubs/SyncHub.cs
 using Microsoft.AspNetCore.SignalR;
 
-namespace JobSync.Api.Hubs;
+namespace web_api.Hubs;
 
 public class SyncHub : Hub
 {
@@ -1718,13 +1406,13 @@ public class SyncHub : Hub
 - [ ] **Step 3: Create SyncProgressReporter**
 
 ```csharp
-// src/JobSync.Infrastructure/Services/SyncProgressReporter.cs
-using JobSync.Core.Interfaces;
-using JobSync.Infrastructure.Data;
+// infrastructure/Services/SyncProgressReporter.cs
+using core.Interfaces;
+using infrastructure.Data;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 
-namespace JobSync.Infrastructure.Services;
+namespace infrastructure.Services;
 
 public class SyncProgressReporter : ISyncProgressReporter
 {
@@ -1782,20 +1470,20 @@ git commit -m "feat: add SignalR hub and progress reporter"
 
 ---
 
-## Task 14: Update Orchestrator with Progress Reporting
+## Task 15: Update Orchestrator with Progress Reporting
 
 **Files:**
 
-- Modify: `src/JobSync.Core/Interfaces/ISyncOrchestrator.cs`
-- Modify: `src/JobSync.Infrastructure/Services/SyncOrchestrator.cs`
+- Modify: `core/Interfaces/ISyncOrchestrator.cs`
+- Modify: `infrastructure/Services/SyncOrchestrator.cs`
 
 - [ ] **Step 1: Update ISyncOrchestrator to accept progress reporter and jobId**
 
 ```csharp
-// src/JobSync.Core/Interfaces/ISyncOrchestrator.cs
-using JobSync.Core.Models;
+// core/Interfaces/ISyncOrchestrator.cs
+using core.Models;
 
-namespace JobSync.Core.Interfaces;
+namespace core.Interfaces;
 
 public interface ISyncOrchestrator
 {
@@ -1806,11 +1494,11 @@ public interface ISyncOrchestrator
 - [ ] **Step 2: Update SyncOrchestrator to emit progress**
 
 ```csharp
-// src/JobSync.Infrastructure/Services/SyncOrchestrator.cs
-using JobSync.Core.Interfaces;
-using JobSync.Core.Models;
+// infrastructure/Services/SyncOrchestrator.cs
+using core.Interfaces;
+using core.Models;
 
-namespace JobSync.Infrastructure.Services;
+namespace infrastructure.Services;
 
 public class SyncOrchestrator : ISyncOrchestrator
 {
@@ -1863,13 +1551,13 @@ public class SyncOrchestrator : ISyncOrchestrator
 - [ ] **Step 3: Update SyncOrchestrator tests**
 
 ```csharp
-// tests/JobSync.Infrastructure.Tests/Services/SyncOrchestratorTests.cs
-using JobSync.Core.Interfaces;
-using JobSync.Core.Models;
-using JobSync.Infrastructure.Services;
+// tests/infrastructure.tests/Services/SyncOrchestratorTests.cs
+using core.Interfaces;
+using core.Models;
+using infrastructure.Services;
 using NSubstitute;
 
-namespace JobSync.Infrastructure.Tests.Services;
+namespace infrastructure.Tests.Services;
 
 public class SyncOrchestratorTests
 {
@@ -1934,7 +1622,7 @@ public class SyncOrchestratorTests
 - [ ] **Step 4: Run tests**
 
 ```bash
-dotnet test tests/JobSync.Infrastructure.Tests --filter "SyncOrchestratorTests"
+dotnet test tests/infrastructure.Tests --filter "SyncOrchestratorTests"
 ```
 
 Expected: PASS.
@@ -1948,27 +1636,27 @@ git commit -m "feat: add progress reporting to sync orchestrator"
 
 ---
 
-## Task 15: Update Background Worker with SignalR
+## Task 16: Update Background Worker with SignalR
 
 **Files:**
 
-- Modify: `src/JobSync.Worker/SyncBackgroundService.cs`
+- Modify: `worker/SyncBackgroundService.cs`
 
 - [ ] **Step 1: Update SyncBackgroundService to use progress reporter**
 
 ```csharp
-// src/JobSync.Worker/SyncBackgroundService.cs
+// worker/SyncBackgroundService.cs
 using System.Text.Json;
-using JobSync.Core.Entities;
-using JobSync.Core.Enums;
-using JobSync.Core.Interfaces;
-using JobSync.Infrastructure.Data;
+using core.Entities;
+using core.Enums;
+using core.Interfaces;
+using infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
-namespace JobSync.Worker;
+namespace worker;
 
 public class SyncBackgroundService : BackgroundService
 {
@@ -2048,21 +1736,21 @@ git commit -m "feat: integrate SignalR progress reporting in background worker"
 
 ---
 
-## Task 16: Update Program.cs with SignalR
+## Task 17: Update Program.cs with SignalR
 
 **Files:**
 
-- Modify: `src/JobSync.Api/Program.cs`
+- Modify: `web-api/Program.cs`
 
 - [ ] **Step 1: Update Program.cs to register SignalR and progress reporter**
 
 ```csharp
-// src/JobSync.Api/Program.cs
-using JobSync.Api.Hubs;
-using JobSync.Core.Interfaces;
-using JobSync.Infrastructure.Data;
-using JobSync.Infrastructure.Services;
-using JobSync.Worker;
+// web-api/Program.cs
+using web_api.Hubs;
+using core.Interfaces;
+using infrastructure.Data;
+using infrastructure.Services;
+using worker;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -2121,11 +1809,11 @@ git commit -m "feat: register SignalR hub and progress reporter in DI"
 
 ---
 
-## Task 17: Update SyncController with Progress Fields
+## Task 18: Update SyncController with Progress Fields
 
 **Files:**
 
-- Modify: `src/JobSync.Api/Controllers/SyncController.cs`
+- Modify: `web-api/Controllers/SyncController.cs`
 
 - [ ] **Step 1: Update GetStatus to include stage and percent**
 
@@ -2152,7 +1840,7 @@ git commit -m "feat: register SignalR hub and progress reporter in DI"
 - [ ] **Step 2: Run tests**
 
 ```bash
-dotnet test tests/JobSync.Api.Tests --filter "SyncControllerTests"
+dotnet test tests/web_api.Tests --filter "SyncControllerTests"
 ```
 
 Expected: PASS.
@@ -2166,22 +1854,22 @@ git commit -m "feat: include stage and percent in sync status response"
 
 ---
 
-## Task 18: Initial EF Migration
+## Task 19: Initial EF Migration
 
 **Files:**
 
-- Create: `src/JobSync.Infrastructure/Data/Migrations/` (auto-generated)
+- Create: `infrastructure/Data/Migrations/` (auto-generated)
 
 - [ ] **Step 1: Create initial migration**
 
 ```bash
-dotnet ef migrations add InitialCreate --project src/JobSync.Infrastructure --startup-project src/JobSync.Api --output-dir Data/Migrations
+dotnet ef migrations add InitialCreate --project infrastructure --startup-project web-api --output-dir Data/Migrations
 ```
 
 - [ ] **Step 2: Verify migration generated**
 
 ```bash
-ls src/JobSync.Infrastructure/Data/Migrations/
+ls infrastructure/Data/Migrations/
 ```
 
 Expected: Files like `*_InitialCreate.cs` and `AppDbContextModelSnapshot.cs`.
@@ -2195,7 +1883,7 @@ git commit -m "feat: add initial EF Core migration"
 
 ---
 
-## Task 19: Final Integration Verification
+## Task 20: Final Integration Verification
 
 - [ ] **Step 1: Run all tests**
 
@@ -2208,7 +1896,7 @@ Expected: All tests pass.
 - [ ] **Step 2: Verify app starts (requires PostgreSQL running)**
 
 ```bash
-cd src/JobSync.Api
+cd web-api
 dotnet run &
 sleep 3
 curl http://localhost:5000/swagger/index.html -s -o /dev/null -w "%{http_code}"

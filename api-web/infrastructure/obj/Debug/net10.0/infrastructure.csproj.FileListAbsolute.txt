@@ -1,0 +1,16 @@
+/Users/namd/Projects/Personal/job-sync/api-web/infrastructure/bin/Debug/net10.0/infrastructure.deps.json
+/Users/namd/Projects/Personal/job-sync/api-web/infrastructure/bin/Debug/net10.0/infrastructure.dll
+/Users/namd/Projects/Personal/job-sync/api-web/infrastructure/bin/Debug/net10.0/infrastructure.pdb
+/Users/namd/Projects/Personal/job-sync/api-web/infrastructure/bin/Debug/net10.0/core.dll
+/Users/namd/Projects/Personal/job-sync/api-web/infrastructure/bin/Debug/net10.0/core.pdb
+/Users/namd/Projects/Personal/job-sync/api-web/infrastructure/obj/Debug/net10.0/infrastructure.csproj.AssemblyReference.cache
+/Users/namd/Projects/Personal/job-sync/api-web/infrastructure/obj/Debug/net10.0/infrastructure.GeneratedMSBuildEditorConfig.editorconfig
+/Users/namd/Projects/Personal/job-sync/api-web/infrastructure/obj/Debug/net10.0/infrastructure.AssemblyInfoInputs.cache
+/Users/namd/Projects/Personal/job-sync/api-web/infrastructure/obj/Debug/net10.0/infrastructure.AssemblyInfo.cs
+/Users/namd/Projects/Personal/job-sync/api-web/infrastructure/obj/Debug/net10.0/infrastructure.csproj.CoreCompileInputs.cache
+/Users/namd/Projects/Personal/job-sync/api-web/infrastructure/obj/Debug/net10.0/infrastructure.sourcelink.json
+/Users/namd/Projects/Personal/job-sync/api-web/infrastructure/obj/Debug/net10.0/infrastr.D83B591B.Up2Date
+/Users/namd/Projects/Personal/job-sync/api-web/infrastructure/obj/Debug/net10.0/infrastructure.dll
+/Users/namd/Projects/Personal/job-sync/api-web/infrastructure/obj/Debug/net10.0/refint/infrastructure.dll
+/Users/namd/Projects/Personal/job-sync/api-web/infrastructure/obj/Debug/net10.0/infrastructure.pdb
+/Users/namd/Projects/Personal/job-sync/api-web/infrastructure/obj/Debug/net10.0/ref/infrastructure.dll
