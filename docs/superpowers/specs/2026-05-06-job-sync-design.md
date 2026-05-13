@@ -61,12 +61,12 @@ Job Sync tracks job applications by syncing from a user's Gmail inbox. Users con
 
 ## API Endpoints
 
-### Auth/User
+### Mail Connect
 
-| Method | Endpoint                  | Description                                                 |
-| ------ | ------------------------- | ----------------------------------------------------------- |
-| GET    | `/api/auth/gmail/url`     | Return Gmail OAuth consent URL for client to redirect       |
-| POST   | `/api/auth/gmail/connect` | Receive OAuth code, exchange for tokens, create/update user |
+| Method | Endpoint                          | Description                                                 |
+| ------ | --------------------------------- | ----------------------------------------------------------- |
+| GET    | `/api/mail-connect/gmail/url`     | Return Gmail OAuth consent URL for client to redirect       |
+| POST   | `/api/mail-connect/gmail/connect` | Receive OAuth code, exchange for tokens, create/update user |
 
 ### Sync
 
@@ -83,6 +83,8 @@ Job Sync tracks job applications by syncing from a user's Gmail inbox. Users con
 - **Gmail Service** — handles OAuth token refresh, fetches emails via Gmail API
 - **Gemini Service** — batches emails, sends to Gemini, parses structured response
 - **Sync Orchestrator** — coordinates the pipeline (fetch → batch → process → merge → store result)
+- **Progress Reporter** — persists progress to DB + delegates to ISyncHubNotifier for SignalR push
+- **Hub Notifier** — sends SignalR events (SyncProgress, SyncCompleted, SyncFailed) via IHubContext
 - **Background Worker** — `BackgroundService` / `IHostedService`, picks up pending SyncJobs, runs orchestrator
 
 ### Sync Pipeline Flow
@@ -99,11 +101,11 @@ Job Sync tracks job applications by syncing from a user's Gmail inbox. Users con
 
 ### OAuth Connect Flow
 
-1. Client calls `GET /api/auth/gmail/url`
+1. Client calls `GET /api/mail-connect/gmail/url`
 2. Backend returns Google OAuth consent URL
 3. Client redirects user to Google
 4. User grants consent, Google redirects back with auth code
-5. Client calls `POST /api/auth/gmail/connect` with code
+5. Client calls `POST /api/mail-connect/gmail/connect` with code
 6. Backend exchanges code for access + refresh tokens
 7. Backend creates/updates User record with encrypted tokens
 8. Returns userId to client
@@ -116,11 +118,12 @@ Job Sync tracks job applications by syncing from a user's Gmail inbox. Users con
 ## Project Structure
 
 ```
-JobSync/
-├── JobSync.Api/              # REST controllers, startup, DI config
-├── JobSync.Core/             # Domain models, interfaces, DTOs
-├── JobSync.Infrastructure/   # Gmail service, Gemini service, EF Core DbContext
-└── JobSync.Worker/           # Background hosted service (or same project as Api)
+api-web/
+├── web-api/                  # REST controllers, Program.cs, DI config, SignalR hub, SyncHubNotifier
+├── core/                     # Domain entities, interfaces (incl. ISyncHubNotifier), models, enums
+├── infrastructure/           # Gmail service, Gemini service, EF Core DbContext, SyncOrchestrator, SyncProgressReporter
+├── worker/                   # SyncBackgroundService (BackgroundService)
+└── api-contracts/            # Request DTOs (GmailConnectRequest, StartSyncRequest)
 ```
 
 ## Tech Stack

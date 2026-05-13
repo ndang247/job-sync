@@ -29,6 +29,8 @@ api-web/
 │   │   └── SyncController.cs
 │   ├── Hubs/
 │   │   └── SyncHub.cs
+│   ├── Services/
+│   │   └── SyncHubNotifier.cs
 │   └── web-api.csproj
 ├── core/
 │   ├── Entities/
@@ -43,7 +45,8 @@ api-web/
 │   │   ├── IGmailService.cs
 │   │   ├── IGeminiService.cs
 │   │   ├── ISyncOrchestrator.cs
-│   │   └── ISyncProgressReporter.cs
+│   │   ├── ISyncProgressReporter.cs
+│   │   └── ISyncHubNotifier.cs
 │   └── core.csproj
 ├── infrastructure/
 │   ├── Data/
@@ -56,13 +59,13 @@ api-web/
 │   │       ├── 20260510042549_InitialCreate.Designer.cs
 │   │       └── AppDbContextModelSnapshot.cs
 │   ├── Services/
-│   │   ├── GmailService.cs           (stub)
-│   │   ├── GeminiService.cs          (stub)
-│   │   ├── SyncOrchestrator.cs       (stub)
-│   │   └── SyncProgressReporter.cs   (stub)
+│   │   ├── GmailService.cs
+│   │   ├── GeminiService.cs
+│   │   ├── SyncOrchestrator.cs
+│   │   └── SyncProgressReporter.cs
 │   └── infrastructure.csproj
 └── worker/
-    ├── SyncBackgroundService.cs      (stub)
+    ├── SyncBackgroundService.cs
     └── worker.csproj
 ```
 
@@ -592,11 +595,14 @@ git commit -m "feat: implement Gemini service for email classification and dedup
 
 ---
 
-## Task 8: Sync Orchestrator
+## Task 8: Sync Orchestrator ✅ COMPLETED
+
+> Implemented with batching (20 per batch), progress reporting, and deduplication.
+> Final implementation done as part of Task 15 (with progress reporting).
 
 **Files:**
 
-- Create: `infrastructure/Services/SyncOrchestrator.cs`
+- Created: `infrastructure/Services/SyncOrchestrator.cs`
 - Create: `tests/infrastructure.tests/Services/SyncOrchestratorTests.cs`
 
 - [ ] **Step 1: Write failing test**
@@ -741,11 +747,14 @@ git commit -m "feat: implement sync orchestrator with batching and deduplication
 
 ---
 
-## Task 9: Background Worker
+## Task 9: Background Worker ✅ COMPLETED
+
+> Implemented with polling loop, scoped DI, progress reporting, and error handling.
+> Final implementation done as part of Task 16 (with SignalR progress).
 
 **Files:**
 
-- Create: `worker/SyncBackgroundService.cs`
+- Created: `worker/SyncBackgroundService.cs`
 - Create: `tests/worker.tests/SyncBackgroundServiceTests.cs`
 
 - [ ] **Step 1: Write failing test**
@@ -1328,11 +1337,10 @@ git commit -m "feat: add application configuration"
 
 ---
 
-## Task 13: Initial Program.cs (without SignalR — added in Task 17) ⚠️ PARTIALLY DONE
+## Task 13: Initial Program.cs (without SignalR — added in Task 17) ✅ COMPLETED
 
-> Controllers, EF Core, and SignalR already wired.
-> Still needed: DI registration for services (IGmailService, IGeminiService, ISyncOrchestrator, ISyncProgressReporter),
-> hosted service registration (SyncBackgroundService), CORS config, Swagger.
+> Controllers, EF Core, SignalR, CORS, all service DI registrations, and hosted service wired.
+> Combined with Task 17 — final Program.cs has full setup.
 
 - [ ] **Step 1: Configure basic Program.cs**
 
@@ -1564,10 +1572,11 @@ git commit -m "feat: add SignalR hub and progress reporter"
 
 ---
 
-## Task 15: Update Orchestrator with Progress Reporting ⚠️ PARTIALLY DONE
+## Task 15: Update Orchestrator with Progress Reporting ✅ COMPLETED
 
-> ISyncOrchestrator interface already has the updated signature (jobId, userId, progressReporter).
-> SyncOrchestrator implementation is still a stub.
+> ISyncOrchestrator interface has the updated signature (jobId, userId, progressReporter).
+> SyncOrchestrator implemented with progress reporting at each stage:
+> Fetching emails (5%), Processing batch N/M (10-90%), Deduplicating (90%), Done (100%).
 
 **Files:**
 
@@ -1733,7 +1742,7 @@ git commit -m "feat: add progress reporting to sync orchestrator"
 
 ---
 
-## Task 16: Update Background Worker with SignalR
+## Task 16: Update Background Worker with SignalR ✅ COMPLETED
 
 **Files:**
 
@@ -1833,10 +1842,11 @@ git commit -m "feat: integrate SignalR progress reporting in background worker"
 
 ---
 
-## Task 17: Update Program.cs with SignalR ⚠️ PARTIALLY DONE
+## Task 17: Update Program.cs with SignalR ✅ COMPLETED
 
-> SignalR already wired (`AddSignalR()` + `MapHub<SyncHub>`).
-> Still needed: service DI registrations, CORS, Swagger, hosted service.
+> Full Program.cs with all DI registrations: IGmailService, IGeminiService, ISyncOrchestrator,
+> ISyncProgressReporter, ISyncHubNotifier, SyncBackgroundService hosted service.
+> SignalR, CORS, OpenApi all wired. Combined with Task 13.
 
 **Files:**
 
