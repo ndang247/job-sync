@@ -15,6 +15,11 @@
 ```
 api-web/
 ├── api-web.slnx
+├── api-contracts/
+│   ├── Requests/
+│   │   ├── GmailConnectRequest.cs
+│   │   └── StartSyncRequest.cs
+│   └── api-contracts.csproj
 ├── web-api/
 │   ├── Program.cs
 │   ├── appsettings.json
@@ -43,17 +48,21 @@ api-web/
 ├── infrastructure/
 │   ├── Data/
 │   │   ├── AppDbContext.cs
-│   │   └── Configurations/
-│   │       ├── UserConfiguration.cs
-│   │       └── SyncJobConfiguration.cs
+│   │   ├── Configurations/
+│   │   │   ├── UserConfiguration.cs
+│   │   │   └── SyncJobConfiguration.cs
+│   │   └── Migrations/
+│   │       ├── 20260510042549_InitialCreate.cs
+│   │       ├── 20260510042549_InitialCreate.Designer.cs
+│   │       └── AppDbContextModelSnapshot.cs
 │   ├── Services/
-│   │   ├── GmailService.cs
-│   │   ├── GeminiService.cs
-│   │   ├── SyncOrchestrator.cs
-│   │   └── SyncProgressReporter.cs
+│   │   ├── GmailService.cs           (stub)
+│   │   ├── GeminiService.cs          (stub)
+│   │   ├── SyncOrchestrator.cs       (stub)
+│   │   └── SyncProgressReporter.cs   (stub)
 │   └── infrastructure.csproj
 └── worker/
-    ├── SyncBackgroundService.cs
+    ├── SyncBackgroundService.cs      (stub)
     └── worker.csproj
 ```
 
@@ -89,14 +98,17 @@ api-web/
 
 ---
 
-## Task 5: PostgreSQL Wiring & User Secrets
+## Task 5: PostgreSQL Wiring & User Secrets ✅ COMPLETED
+
+> EF Core wired in Program.cs, user secrets init'd, Design package added, initial migration created and applied.
+> Google config section added to appsettings.json. DB connectivity verified.
 
 **Files:**
 
 - Modify: `web-api/Program.cs`
 - Modify: `web-api/appsettings.json`
 
-- [ ] **Step 1: Init user secrets for web-api project**
+- [x] **Step 1: Init user secrets for web-api project**
 
 ```bash
 cd web-api
@@ -104,7 +116,7 @@ dotnet user-secrets init
 dotnet user-secrets set "ConnectionStrings:DefaultConnection" "Host=localhost;Database=jobsync;Username=postgres;Password=YOUR_PASSWORD"
 ```
 
-- [ ] **Step 2: Add placeholder in appsettings.json (no real credentials)**
+- [x] **Step 2: Add placeholder in appsettings.json (no real credentials)**
 
 ```json
 {
@@ -121,7 +133,7 @@ dotnet user-secrets set "ConnectionStrings:DefaultConnection" "Host=localhost;Da
 }
 ```
 
-- [ ] **Step 3: Wire up EF Core in Program.cs**
+- [x] **Step 3: Wire up EF Core in Program.cs**
 
 ```csharp
 // web-api/Program.cs
@@ -146,20 +158,20 @@ app.UseHttpsRedirection();
 app.Run();
 ```
 
-- [ ] **Step 4: Add EF Core Design package to web-api**
+- [x] **Step 4: Add EF Core Design package to web-api**
 
 ```bash
 cd web-api
 dotnet add package Microsoft.EntityFrameworkCore.Design
 ```
 
-- [ ] **Step 5: Create initial migration**
+- [x] **Step 5: Create initial migration**
 
 ```bash
 dotnet ef migrations add InitialCreate --project infrastructure --startup-project web-api --output-dir Data/Migrations
 ```
 
-- [ ] **Step 6: Apply migration to verify DB connectivity**
+- [x] **Step 6: Apply migration to verify DB connectivity**
 
 ```bash
 dotnet ef database update --project infrastructure --startup-project web-api
@@ -167,7 +179,7 @@ dotnet ef database update --project infrastructure --startup-project web-api
 
 Expected: Tables `Users` and `SyncJobs` created in PostgreSQL.
 
-- [ ] **Step 7: Verify build**
+- [x] **Step 7: Verify build**
 
 ```bash
 dotnet build
@@ -175,7 +187,7 @@ dotnet build
 
 Expected: Build succeeded.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add -A
@@ -893,13 +905,18 @@ git commit -m "feat: implement background worker for async sync job processing"
 
 > Renamed from AuthController to MailConnectController — no auth implementation yet,
 > endpoint is specific to Gmail connection for extensibility.
-> Route: `api/mail/gmail` with `GET url` and `POST connect` endpoints.
-> Request DTO renamed to `GmailConnectRequest`.
+> Route: `api/mail-connect` with `gmail/url` and `gmail/connect` sub-routes.
+> Request DTO `GmailConnectRequest` lives in `api-contracts/Requests/`.
+> Added `api-contracts` classlib project for API request/response DTOs.
+> `Google.Apis.Gmail.v1` package added to web-api.
+> `AddControllers()` and `MapControllers()` wired in Program.cs.
 
 **Files:**
 
-- Create: `web-api/Controllers/MailConnectController.cs`
-- Create: `tests/web-api.tests/Controllers/MailConnectControllerTests.cs`
+- Created: `web-api/Controllers/MailConnectController.cs`
+- Created: `api-contracts/Requests/GmailConnectRequest.cs`
+- Created: `api-contracts/api-contracts.csproj` (new project)
+- Tests not yet created
 
 - [ ] **Step 1: Write failing test**
 
@@ -1073,12 +1090,17 @@ git commit -m "feat: implement auth controller with Gmail OAuth connect"
 
 ---
 
-## Task 11: Sync Controller
+## Task 11: Sync Controller ✅ COMPLETED
+
+> Implemented with `POST api/sync` (creates pending job) and `GET api/sync/{jobId}` (returns status/progress/stage/result/error).
+> `StartSyncRequest` DTO lives in `api-contracts/Requests/`.
+> GetStatus response already includes `progress` and `stage` fields (Task 18 scope covered here).
 
 **Files:**
 
-- Create: `web-api/Controllers/SyncController.cs`
-- Create: `tests/web-api.tests/Controllers/SyncControllerTests.cs`
+- Created: `web-api/Controllers/SyncController.cs`
+- Created: `api-contracts/Requests/StartSyncRequest.cs`
+- Tests not yet created
 
 - [ ] **Step 1: Write failing test**
 
@@ -1256,13 +1278,16 @@ git commit -m "feat: implement sync controller with start and polling endpoints"
 
 ---
 
-## Task 12: Configuration Files
+## Task 12: Configuration Files ✅ COMPLETED
+
+> Google config section (ClientId, ClientSecret, RedirectUri, GeminiApiKey) added to appsettings.json.
+> ConnectionString placeholder already present from Task 5.
 
 **Files:**
 
 - Modify: `web-api/appsettings.json`
 
-- [ ] **Step 1: Configure appsettings.json**
+- [x] **Step 1: Configure appsettings.json**
 
 ```json
 // web-api/appsettings.json
@@ -1295,11 +1320,11 @@ git commit -m "feat: add application configuration"
 
 ---
 
-## Task 13: Initial Program.cs (without SignalR — added in Task 17)
+## Task 13: Initial Program.cs (without SignalR — added in Task 17) ⚠️ PARTIALLY DONE
 
-**Files:**
-
-- Modify: `web-api/Program.cs`
+> Controllers, EF Core, and SignalR already wired.
+> Still needed: DI registration for services (IGmailService, IGeminiService, ISyncOrchestrator, ISyncProgressReporter),
+> hosted service registration (SyncBackgroundService), CORS config, Swagger.
 
 - [ ] **Step 1: Configure basic Program.cs**
 
@@ -1364,15 +1389,22 @@ git commit -m "feat: wire up DI, EF Core, and background service in Program.cs"
 
 ---
 
-## Task 14: SignalR Hub & Progress Reporting
+## Task 14: SignalR Hub & Progress Reporting ⚠️ PARTIALLY DONE
+
+> SyncHub created with JoinJob/LeaveJob group management.
+> SignalR wired in Program.cs (`AddSignalR()` + `MapHub<SyncHub>("/hubs/sync")`).
+> ISyncProgressReporter interface exists (created in Task 3).
+> SyncProgressReporter is still a stub (throws NotImplementedException).
+> Note: SyncProgressReporter needs an `ISyncHubNotifier` abstraction to avoid circular dependency
+> (infrastructure can't reference web-api for IHubContext<SyncHub>).
 
 **Files:**
 
-- Create: `web-api/Hubs/SyncHub.cs`
-- Create: `core/Interfaces/ISyncProgressReporter.cs`
-- Create: `infrastructure/Services/SyncProgressReporter.cs`
+- Created: `web-api/Hubs/SyncHub.cs`
+- Exists: `core/Interfaces/ISyncProgressReporter.cs` (from Task 3)
+- Stub: `infrastructure/Services/SyncProgressReporter.cs`
 
-- [ ] **Step 1: Create ISyncProgressReporter interface**
+- [x] **Step 1: Create ISyncProgressReporter interface**
 
 ```csharp
 // core/Interfaces/ISyncProgressReporter.cs
@@ -1386,7 +1418,7 @@ public interface ISyncProgressReporter
 }
 ```
 
-- [ ] **Step 2: Create SyncHub**
+- [x] **Step 2: Create SyncHub**
 
 ```csharp
 // web-api/Hubs/SyncHub.cs
@@ -1475,14 +1507,17 @@ git commit -m "feat: add SignalR hub and progress reporter"
 
 ---
 
-## Task 15: Update Orchestrator with Progress Reporting
+## Task 15: Update Orchestrator with Progress Reporting ⚠️ PARTIALLY DONE
+
+> ISyncOrchestrator interface already has the updated signature (jobId, userId, progressReporter).
+> SyncOrchestrator implementation is still a stub.
 
 **Files:**
 
 - Modify: `core/Interfaces/ISyncOrchestrator.cs`
 - Modify: `infrastructure/Services/SyncOrchestrator.cs`
 
-- [ ] **Step 1: Update ISyncOrchestrator to accept progress reporter and jobId**
+- [x] **Step 1: Update ISyncOrchestrator to accept progress reporter and jobId**
 
 ```csharp
 // core/Interfaces/ISyncOrchestrator.cs
@@ -1741,7 +1776,10 @@ git commit -m "feat: integrate SignalR progress reporting in background worker"
 
 ---
 
-## Task 17: Update Program.cs with SignalR
+## Task 17: Update Program.cs with SignalR ⚠️ PARTIALLY DONE
+
+> SignalR already wired (`AddSignalR()` + `MapHub<SyncHub>`).
+> Still needed: service DI registrations, CORS, Swagger, hosted service.
 
 **Files:**
 
@@ -1814,7 +1852,10 @@ git commit -m "feat: register SignalR hub and progress reporter in DI"
 
 ---
 
-## Task 18: Update SyncController with Progress Fields
+## Task 18: Update SyncController with Progress Fields ✅ COMPLETED
+
+> Already included `stage` and `progress` (as `percent`) in the GetStatus response
+> when SyncController was implemented in Task 11.
 
 **Files:**
 
@@ -1859,19 +1900,21 @@ git commit -m "feat: include stage and percent in sync status response"
 
 ---
 
-## Task 19: Initial EF Migration
+## Task 19: Initial EF Migration ✅ COMPLETED
+
+> Migration `20260510042549_InitialCreate` created and applied in Task 5.
 
 **Files:**
 
 - Create: `infrastructure/Data/Migrations/` (auto-generated)
 
-- [ ] **Step 1: Create initial migration**
+- [x] **Step 1: Create initial migration**
 
 ```bash
 dotnet ef migrations add InitialCreate --project infrastructure --startup-project web-api --output-dir Data/Migrations
 ```
 
-- [ ] **Step 2: Verify migration generated**
+- [x] **Step 2: Verify migration generated**
 
 ```bash
 ls infrastructure/Data/Migrations/
@@ -1879,7 +1922,7 @@ ls infrastructure/Data/Migrations/
 
 Expected: Files like `*_InitialCreate.cs` and `AppDbContextModelSnapshot.cs`.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add -A

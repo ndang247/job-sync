@@ -5,6 +5,7 @@
     <RootNamespace>api_contracts</RootNamespace>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <UserSecretsId>e8a89b87-6946-49ef-b92c-3983d7d17e19</UserSecretsId>
   </PropertyGroup>
 
 </Project>
