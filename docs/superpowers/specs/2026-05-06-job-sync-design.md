@@ -53,7 +53,7 @@ Job Sync tracks job applications by syncing from a user's Gmail inbox. Users con
   {
     "companyName": "Atlassian",
     "jobRole": "Senior Software Engineer",
-    "appliedDate": "2026-04-15",
+    "appliedDate": "15-04-2026",
     "status": "applied"
   }
 ]

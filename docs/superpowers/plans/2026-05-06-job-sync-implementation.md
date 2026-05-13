@@ -196,11 +196,15 @@ git commit -m "feat: wire up PostgreSQL with EF Core and user secrets"
 
 ---
 
-## Task 6: Gmail Service
+## Task 6: Gmail Service ✅ COMPLETED
+
+> Implemented with OAuth token refresh, email fetching (last 30 days), MIME parsing.
+> Packages added: `Google.Apis.Gmail.v1 1.74.0.4134` (to infrastructure).
+> Tests not yet created.
 
 **Files:**
 
-- Create: `infrastructure/Services/GmailService.cs`
+- Created: `infrastructure/Services/GmailService.cs`
 - Create: `tests/infrastructure.tests/Services/GmailServiceTests.cs`
 
 - [ ] **Step 1: Write failing test for GmailService**
@@ -413,11 +417,15 @@ git commit -m "feat: implement Gmail service with token refresh"
 
 ---
 
-## Task 7: Gemini Service
+## Task 7: Gemini Service ✅ COMPLETED
+
+> Implemented with batched classification and deduplication via Gemini 2.0 Flash.
+> Packages added: `Google_GenerativeAI 3.6.6` (to infrastructure).
+> JSON response parsing with markdown fence stripping. Tests not yet created.
 
 **Files:**
 
-- Create: `infrastructure/Services/GeminiService.cs`
+- Created: `infrastructure/Services/GeminiService.cs`
 - Create: `tests/infrastructure.tests/Services/GeminiServiceTests.cs`
 
 - [ ] **Step 1: Write failing test for batch classification**
@@ -498,12 +506,12 @@ public class GeminiService : IGeminiService
         var model = CreateModel();
 
         var emailsText = string.Join("\n---\n", emails.Select(e =>
-            $"Subject: {e.Subject}\nFrom: {e.From}\nDate: {e.Date:yyyy-MM-dd}\nBody: {e.Body[..Math.Min(e.Body.Length, 500)]}"));
+            $"Subject: {e.Subject}\nFrom: {e.From}\nDate: {e.Date:dd-MM-yyyy}\nBody: {e.Body[..Math.Min(e.Body.Length, 500)]}"));
 
         var prompt = $"""
             Given these emails, identify which are job application related.
             For duplicates about the same application (e.g. platform confirmation like Seek.com.au + company auto-reply), return only one entry.
-            Return ONLY a JSON array (no markdown, no explanation) with objects containing: companyName, jobRole, appliedDate (use the email date in yyyy-MM-dd format), status (always "applied").
+            Return ONLY a JSON array (no markdown, no explanation) with objects containing: companyName, jobRole, appliedDate (use the email date in dd-MM-yyyy format), status (always "applied").
             If no emails are job-related, return an empty array [].
 
             Emails:
