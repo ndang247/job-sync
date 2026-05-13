@@ -1397,20 +1397,22 @@ git commit -m "feat: wire up DI, EF Core, and background service in Program.cs"
 
 ---
 
-## Task 14: SignalR Hub & Progress Reporting ⚠️ PARTIALLY DONE
+## Task 14: SignalR Hub & Progress Reporting ✅ COMPLETED
 
 > SyncHub created with JoinJob/LeaveJob group management.
 > SignalR wired in Program.cs (`AddSignalR()` + `MapHub<SyncHub>("/hubs/sync")`).
 > ISyncProgressReporter interface exists (created in Task 3).
-> SyncProgressReporter is still a stub (throws NotImplementedException).
-> Note: SyncProgressReporter needs an `ISyncHubNotifier` abstraction to avoid circular dependency
-> (infrastructure can't reference web-api for IHubContext<SyncHub>).
+> ISyncHubNotifier abstraction created in core to avoid circular dependency (infrastructure → web-api).
+> SyncProgressReporter implemented in infrastructure — persists progress to DB + delegates to ISyncHubNotifier.
+> SyncHubNotifier implemented in web-api/Services — uses IHubContext<SyncHub> to push SignalR events.
 
 **Files:**
 
 - Created: `web-api/Hubs/SyncHub.cs`
-- Exists: `core/Interfaces/ISyncProgressReporter.cs` (from Task 3)
-- Stub: `infrastructure/Services/SyncProgressReporter.cs`
+- Created: `core/Interfaces/ISyncHubNotifier.cs`
+- Created: `core/Interfaces/ISyncProgressReporter.cs` (from Task 3)
+- Created: `infrastructure/Services/SyncProgressReporter.cs`
+- Created: `web-api/Services/SyncHubNotifier.cs`
 
 - [x] **Step 1: Create ISyncProgressReporter interface**
 
@@ -1448,26 +1450,25 @@ public class SyncHub : Hub
 }
 ```
 
-- [ ] **Step 3: Create SyncProgressReporter**
+- [x] **Step 3: Create SyncProgressReporter**
 
 ```csharp
 // infrastructure/Services/SyncProgressReporter.cs
 using core.Interfaces;
 using infrastructure.Data;
-using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 
 namespace infrastructure.Services;
 
 public class SyncProgressReporter : ISyncProgressReporter
 {
-    private readonly IHubContext<Api.Hubs.SyncHub> _hubContext;
     private readonly AppDbContext _dbContext;
+    private readonly ISyncHubNotifier _hubNotifier;
 
-    public SyncProgressReporter(IHubContext<Api.Hubs.SyncHub> hubContext, AppDbContext dbContext)
+    public SyncProgressReporter(AppDbContext dbContext, ISyncHubNotifier hubNotifier)
     {
-        _hubContext = hubContext;
         _dbContext = dbContext;
+        _hubNotifier = hubNotifier;
     }
 
     public async Task ReportProgressAsync(Guid jobId, string stage, int percent, CancellationToken cancellationToken = default)
@@ -1480,17 +1481,65 @@ public class SyncProgressReporter : ISyncProgressReporter
             await _dbContext.SaveChangesAsync(cancellationToken);
         }
 
+        await _hubNotifier.SendProgressAsync(jobId, stage, percent, cancellationToken);
+    }
+
+    public async Task ReportCompletedAsync(Guid jobId, CancellationToken cancellationToken = default)
+    {
+        await _hubNotifier.SendCompletedAsync(jobId, cancellationToken);
+    }
+
+    public async Task ReportFailedAsync(Guid jobId, string error, CancellationToken cancellationToken = default)
+    {
+        await _hubNotifier.SendFailedAsync(jobId, error, cancellationToken);
+    }
+}
+```
+
+- [x] **Step 4: Create ISyncHubNotifier and SyncHubNotifier**
+
+```csharp
+// core/Interfaces/ISyncHubNotifier.cs
+namespace core.Interfaces;
+
+public interface ISyncHubNotifier
+{
+    Task SendProgressAsync(Guid jobId, string stage, int percent, CancellationToken cancellationToken = default);
+    Task SendCompletedAsync(Guid jobId, CancellationToken cancellationToken = default);
+    Task SendFailedAsync(Guid jobId, string error, CancellationToken cancellationToken = default);
+}
+```
+
+```csharp
+// web-api/Services/SyncHubNotifier.cs
+using core.Interfaces;
+using Microsoft.AspNetCore.SignalR;
+using web_api.Hubs;
+
+namespace web_api.Services;
+
+public class SyncHubNotifier : ISyncHubNotifier
+{
+    private readonly IHubContext<SyncHub> _hubContext;
+
+    public SyncHubNotifier(IHubContext<SyncHub> hubContext)
+    {
+        _hubContext = hubContext;
+    }
+
+    public async Task SendProgressAsync(Guid jobId, string stage, int percent, CancellationToken cancellationToken = default)
+    {
         await _hubContext.Clients.Group($"sync-{jobId}")
             .SendAsync("SyncProgress", stage, percent, cancellationToken);
     }
 
-    public async Task ReportCompletedAsync(Guid jobId, CancellationToken cancellationToken = default)
+    public async Task SendCompletedAsync(Guid jobId, CancellationToken cancellationToken = default)
     {
         await _hubContext.Clients.Group($"sync-{jobId}")
             .SendAsync("SyncCompleted", cancellationToken);
     }
 
-    public async Task ReportFailedAsync(Guid jobId, string error, CancellationToken cancellationToken = default)
+    public async Task SendFailedAsync(Guid jobId, string error, CancellationToken cancellationToken = default)
     {
         await _hubContext.Clients.Group($"sync-{jobId}")
             .SendAsync("SyncFailed", error, cancellationToken);
@@ -1498,7 +1547,7 @@ public class SyncProgressReporter : ISyncProgressReporter
 }
 ```
 
-- [ ] **Step 4: Verify build**
+- [x] **Step 5: Verify build**
 
 ```bash
 dotnet build
@@ -1506,7 +1555,7 @@ dotnet build
 
 Expected: Build succeeded.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
 git add -A
