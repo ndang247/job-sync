@@ -24,7 +24,7 @@ public class SyncControllerTests : IClassFixture<CustomWebApplicationFactory>
     {
         var (userId, connId) = await SeedUserWithConnectionAsync();
 
-        var response = await _client.PostAsJsonAsync("/api/sync", new { userId, emailConnectionId = connId });
+        var response = await _client.PostAsJsonAsync("/api/v1/sync", new { userId, emailConnectionId = connId });
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
@@ -39,7 +39,7 @@ public class SyncControllerTests : IClassFixture<CustomWebApplicationFactory>
     {
         var (userId, connId) = await SeedUserWithConnectionAsync();
 
-        var response = await _client.PostAsJsonAsync("/api/sync", new { userId, emailConnectionId = connId });
+        var response = await _client.PostAsJsonAsync("/api/v1/sync", new { userId, emailConnectionId = connId });
         var content = await response.Content.ReadFromJsonAsync<JsonElement>();
         var jobId = Guid.Parse(content.GetProperty("jobId").GetString()!);
 
@@ -56,7 +56,7 @@ public class SyncControllerTests : IClassFixture<CustomWebApplicationFactory>
     {
         var (userId, connId) = await SeedUserWithConnectionAsync();
 
-        var response = await _client.PostAsJsonAsync("/api/sync", new { userId, emailConnectionId = connId });
+        var response = await _client.PostAsJsonAsync("/api/v1/sync", new { userId, emailConnectionId = connId });
         var content = await response.Content.ReadFromJsonAsync<JsonElement>();
         var jobId = Guid.Parse(content.GetProperty("jobId").GetString()!);
 
@@ -67,7 +67,7 @@ public class SyncControllerTests : IClassFixture<CustomWebApplicationFactory>
     [Fact]
     public async Task StartSync_NonExistentUser_ReturnsBadRequest()
     {
-        var response = await _client.PostAsJsonAsync("/api/sync", new { userId = Guid.NewGuid(), emailConnectionId = Guid.NewGuid() });
+        var response = await _client.PostAsJsonAsync("/api/v1/sync", new { userId = Guid.NewGuid(), emailConnectionId = Guid.NewGuid() });
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
 
@@ -87,7 +87,7 @@ public class SyncControllerTests : IClassFixture<CustomWebApplicationFactory>
             userId = user.Id;
         }
 
-        var response = await _client.PostAsJsonAsync("/api/sync", new { userId, emailConnectionId = Guid.NewGuid() });
+        var response = await _client.PostAsJsonAsync("/api/v1/sync", new { userId, emailConnectionId = Guid.NewGuid() });
 
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
 
@@ -110,7 +110,7 @@ public class SyncControllerTests : IClassFixture<CustomWebApplicationFactory>
             otherUserId = other.Id;
         }
 
-        var response = await _client.PostAsJsonAsync("/api/sync", new { userId = otherUserId, emailConnectionId = connId });
+        var response = await _client.PostAsJsonAsync("/api/v1/sync", new { userId = otherUserId, emailConnectionId = connId });
 
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
 
@@ -143,7 +143,7 @@ public class SyncControllerTests : IClassFixture<CustomWebApplicationFactory>
             connId = conn.Id;
         }
 
-        var response = await _client.PostAsJsonAsync("/api/sync", new { userId, emailConnectionId = connId });
+        var response = await _client.PostAsJsonAsync("/api/v1/sync", new { userId, emailConnectionId = connId });
 
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
 
@@ -168,7 +168,7 @@ public class SyncControllerTests : IClassFixture<CustomWebApplicationFactory>
             await db.SaveChangesAsync();
         }
 
-        var response = await _client.PostAsJsonAsync("/api/sync", new { userId, emailConnectionId = connId });
+        var response = await _client.PostAsJsonAsync("/api/v1/sync", new { userId, emailConnectionId = connId });
 
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
 
@@ -193,7 +193,7 @@ public class SyncControllerTests : IClassFixture<CustomWebApplicationFactory>
             await db.SaveChangesAsync();
         }
 
-        var response = await _client.PostAsJsonAsync("/api/sync", new { userId, emailConnectionId = connId });
+        var response = await _client.PostAsJsonAsync("/api/v1/sync", new { userId, emailConnectionId = connId });
 
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
     }
@@ -215,7 +215,7 @@ public class SyncControllerTests : IClassFixture<CustomWebApplicationFactory>
             await db.SaveChangesAsync();
         }
 
-        var response = await _client.PostAsJsonAsync("/api/sync", new { userId, emailConnectionId = connId });
+        var response = await _client.PostAsJsonAsync("/api/v1/sync", new { userId, emailConnectionId = connId });
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
@@ -238,7 +238,7 @@ public class SyncControllerTests : IClassFixture<CustomWebApplicationFactory>
             await db.SaveChangesAsync();
         }
 
-        var response = await _client.PostAsJsonAsync("/api/sync", new { userId, emailConnectionId = connId });
+        var response = await _client.PostAsJsonAsync("/api/v1/sync", new { userId, emailConnectionId = connId });
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
@@ -268,11 +268,11 @@ public class SyncControllerTests : IClassFixture<CustomWebApplicationFactory>
         }
 
         // Start sync for first connection
-        var response1 = await _client.PostAsJsonAsync("/api/sync", new { userId, emailConnectionId = connId1 });
+        var response1 = await _client.PostAsJsonAsync("/api/v1/sync", new { userId, emailConnectionId = connId1 });
         Assert.Equal(HttpStatusCode.OK, response1.StatusCode);
 
         // Start sync for second connection (should also succeed)
-        var response2 = await _client.PostAsJsonAsync("/api/sync", new { userId, emailConnectionId = connId2 });
+        var response2 = await _client.PostAsJsonAsync("/api/v1/sync", new { userId, emailConnectionId = connId2 });
         Assert.Equal(HttpStatusCode.OK, response2.StatusCode);
     }
 
@@ -296,7 +296,7 @@ public class SyncControllerTests : IClassFixture<CustomWebApplicationFactory>
             await db.SaveChangesAsync();
         }
 
-        var response = await _client.GetAsync($"/api/sync/status/{jobId}");
+        var response = await _client.GetAsync($"/api/v1/sync/status/{jobId}");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
@@ -333,7 +333,7 @@ public class SyncControllerTests : IClassFixture<CustomWebApplicationFactory>
             await db.SaveChangesAsync();
         }
 
-        var response = await _client.GetAsync($"/api/sync/status/{jobId}");
+        var response = await _client.GetAsync($"/api/v1/sync/status/{jobId}");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
@@ -365,7 +365,7 @@ public class SyncControllerTests : IClassFixture<CustomWebApplicationFactory>
             await db.SaveChangesAsync();
         }
 
-        var response = await _client.GetAsync($"/api/sync/status/{jobId}");
+        var response = await _client.GetAsync($"/api/v1/sync/status/{jobId}");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
@@ -377,7 +377,7 @@ public class SyncControllerTests : IClassFixture<CustomWebApplicationFactory>
     [Fact]
     public async Task GetStatus_NonExistentJob_ReturnsNotFound()
     {
-        var response = await _client.GetAsync($"/api/sync/status/{Guid.NewGuid()}");
+        var response = await _client.GetAsync($"/api/v1/sync/status/{Guid.NewGuid()}");
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
@@ -385,7 +385,7 @@ public class SyncControllerTests : IClassFixture<CustomWebApplicationFactory>
     [Fact]
     public async Task GetStatus_InvalidGuid_ReturnsNotFound()
     {
-        var response = await _client.GetAsync("/api/sync/status/not-a-guid");
+        var response = await _client.GetAsync("/api/v1/sync/status/not-a-guid");
 
         // Route constraint {jobId:guid} should reject this
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);

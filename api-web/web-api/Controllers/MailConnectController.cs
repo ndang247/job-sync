@@ -3,14 +3,13 @@ using core.Entities;
 using core.Enums;
 using core.Interfaces;
 using infrastructure.Data;
-using api_contracts.Requests;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
 namespace web_api.Controllers;
 
 [ApiController]
-[Route("api/mail-connect")]
+[Route("api/v1/mail-connect")]
 public class MailConnectController : ControllerBase
 {
     private readonly AppDbContext _dbContext;
@@ -24,56 +23,49 @@ public class MailConnectController : ControllerBase
         _tokenExchanger = tokenExchanger;
     }
 
-    [HttpGet("gmail/url")]
-    public IActionResult GetGmailUrl()
+    [HttpGet("gmail/start")]
+    public IActionResult GmailStart()
     {
         var clientId = _configuration["Google:ClientId"]!;
         var redirectUri = _configuration["Google:RedirectUri"]!;
+
+        var scopes = $"{GmailService.Scope.GmailReadonly} openid profile email";
 
         var url = $"https://accounts.google.com/o/oauth2/v2/auth?" +
                   $"client_id={clientId}&" +
                   $"redirect_uri={Uri.EscapeDataString(redirectUri)}&" +
                   $"response_type=code&" +
-                  $"scope={Uri.EscapeDataString(GmailService.Scope.GmailReadonly)}&" +
+                  $"scope={Uri.EscapeDataString(scopes)}&" +
                   $"access_type=offline&" +
                   $"prompt=consent";
 
-        return Ok(new { url });
+        return Redirect(url);
     }
 
-    [HttpPost("gmail/connect")]
-    public async Task<IActionResult> GmailConnect([FromBody] GmailConnectRequest request)
+    [HttpGet("gmail/callback")]
+    public async Task<IActionResult> GmailCallback([FromQuery] string? code, [FromQuery] string? error)
     {
-        var tokenResult = await _tokenExchanger.ExchangeCodeAsync(request.Code);
+        var frontendUrl = _configuration["FrontendUrl"]!;
+
+        if (!string.IsNullOrEmpty(error) || string.IsNullOrEmpty(code))
+        {
+            return Redirect($"{frontendUrl}/connect?error={Uri.EscapeDataString(error ?? "no_code")}");
+        }
+
+        var tokenResult = await _tokenExchanger.ExchangeCodeAsync(code);
+
+        // Find existing user by SubjectId, or create a new one
+        var existingConnection = await _dbContext.EmailConnections
+            .Include(ec => ec.User)
+            .FirstOrDefaultAsync(ec => ec.SubjectId == tokenResult.SubjectId);
 
         User user;
-
-        if (request.UserId.HasValue)
-        {
-            var existingUser = await _dbContext.Users.FirstOrDefaultAsync(u => u.Id == request.UserId.Value);
-            if (existingUser is null)
-                return BadRequest(new { error = "User not found" });
-            user = existingUser;
-        }
-        else
-        {
-            user = new User
-            {
-                Id = Guid.NewGuid(),
-                FirstName = request.FirstName,
-                LastName = request.LastName,
-            };
-            _dbContext.Users.Add(user);
-        }
-
-        // Upsert EmailConnection by (UserId, SubjectId)
-        var existingConnection = await _dbContext.EmailConnections
-            .FirstOrDefaultAsync(ec => ec.UserId == user.Id && ec.SubjectId == tokenResult.SubjectId);
-
         EmailConnection connection;
 
         if (existingConnection is not null)
         {
+            // Returning user — update tokens
+            user = existingConnection.User;
             existingConnection.RefreshToken = tokenResult.RefreshToken;
             existingConnection.GrantedScopes = tokenResult.GrantedScopes;
             existingConnection.Email = tokenResult.Email;
@@ -82,6 +74,16 @@ public class MailConnectController : ControllerBase
         }
         else
         {
+            // New user
+            // This is acceptable for now without authentication
+            user = new User
+            {
+                Id = Guid.NewGuid(),
+                FirstName = tokenResult.GivenName,
+                LastName = tokenResult.FamilyName,
+            };
+            _dbContext.Users.Add(user);
+
             connection = new EmailConnection
             {
                 Id = Guid.NewGuid(),
@@ -97,11 +99,6 @@ public class MailConnectController : ControllerBase
 
         await _dbContext.SaveChangesAsync();
 
-        return Ok(new
-        {
-            userId = user.Id,
-            emailConnectionId = connection.Id,
-            status = connection.Status.ToString().ToLowerInvariant()
-        });
+        return Redirect($"{frontendUrl}/dashboard?userId={user.Id}&connectionId={connection.Id}");
     }
 }

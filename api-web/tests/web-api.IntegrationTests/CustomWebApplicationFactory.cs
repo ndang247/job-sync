@@ -3,6 +3,7 @@ using infrastructure.Data;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using NSubstitute;
@@ -19,6 +20,18 @@ public class CustomWebApplicationFactory : WebApplicationFactory<Program>
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Testing");
+
+        builder.ConfigureAppConfiguration(config =>
+        {
+            config.AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Google:ClientId"] = "test-client-id",
+                ["Google:ClientSecret"] = "test-client-secret",
+                ["Google:RedirectUri"] = "http://localhost/api/v1/mail-connect/gmail/callback",
+                ["Google:GeminiApiKey"] = "test-gemini-key",
+                ["FrontendUrl"] = "http://localhost:4200",
+            });
+        });
 
         builder.ConfigureServices(services =>
         {

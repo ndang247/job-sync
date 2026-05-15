@@ -24,7 +24,12 @@ public class GoogleTokenExchanger : IGoogleTokenExchanger
                 ClientId = _configuration["Google:ClientId"]!,
                 ClientSecret = _configuration["Google:ClientSecret"]!
             },
-            Scopes = [Google.Apis.Gmail.v1.GmailService.Scope.GmailReadonly]
+            Scopes = [
+                Google.Apis.Gmail.v1.GmailService.Scope.GmailReadonly,
+                "openid",
+                "profile",
+                "email"
+            ]
         });
 
         var tokenResponse = await flow.ExchangeCodeForTokenAsync(
@@ -35,6 +40,8 @@ public class GoogleTokenExchanger : IGoogleTokenExchanger
 
         var subjectId = string.Empty;
         var email = string.Empty;
+        var givenName = string.Empty;
+        var familyName = string.Empty;
 
         if (!string.IsNullOrEmpty(tokenResponse.IdToken))
         {
@@ -42,6 +49,8 @@ public class GoogleTokenExchanger : IGoogleTokenExchanger
             var jwt = handler.ReadJwtToken(tokenResponse.IdToken);
             subjectId = jwt.Claims.FirstOrDefault(c => c.Type == "sub")?.Value ?? string.Empty;
             email = jwt.Claims.FirstOrDefault(c => c.Type == "email")?.Value ?? string.Empty;
+            givenName = jwt.Claims.FirstOrDefault(c => c.Type == "given_name")?.Value ?? string.Empty;
+            familyName = jwt.Claims.FirstOrDefault(c => c.Type == "family_name")?.Value ?? string.Empty;
         }
 
         var grantedScopes = tokenResponse.Scope ?? Google.Apis.Gmail.v1.GmailService.Scope.GmailReadonly;
@@ -52,6 +61,8 @@ public class GoogleTokenExchanger : IGoogleTokenExchanger
             tokenResponse.IssuedUtc.AddSeconds(tokenResponse.ExpiresInSeconds ?? 3600),
             subjectId,
             email,
+            givenName,
+            familyName,
             grantedScopes);
     }
 }

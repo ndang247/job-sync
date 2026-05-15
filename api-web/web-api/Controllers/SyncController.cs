@@ -9,7 +9,7 @@ using Microsoft.EntityFrameworkCore;
 namespace web_api.Controllers;
 
 [ApiController]
-[Route("api/sync")]
+[Route("api/v1/sync")]
 public class SyncController : ControllerBase
 {
     private readonly AppDbContext _dbContext;

@@ -16,66 +16,59 @@ public class MailConnectControllerTests : IClassFixture<CustomWebApplicationFact
     public MailConnectControllerTests(CustomWebApplicationFactory factory)
     {
         _factory = factory;
-        _client = factory.CreateClient();
+        // Don't follow redirects so we can assert on Location header
+        _client = factory.CreateClient(new Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactoryClientOptions
+        {
+            AllowAutoRedirect = false
+        });
     }
 
     [Fact]
-    public async Task GetGmailUrl_ReturnsOk_WithOAuthUrl()
+    public async Task GmailStart_RedirectsToGoogle()
     {
-        var response = await _client.GetAsync("/api/mail-connect/gmail/url");
+        var response = await _client.GetAsync("/api/v1/mail-connect/gmail/start");
 
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
 
-        var content = await response.Content.ReadFromJsonAsync<JsonElement>();
-        var url = content.GetProperty("url").GetString();
-
-        Assert.NotNull(url);
-        Assert.Contains("accounts.google.com", url);
-        Assert.Contains("response_type=code", url);
-        Assert.Contains("access_type=offline", url);
+        var location = response.Headers.Location!.ToString();
+        Assert.Contains("accounts.google.com", location);
+        Assert.Contains("response_type=code", location);
+        Assert.Contains("access_type=offline", location);
+        Assert.Contains("gmail.readonly", location);
     }
 
     [Fact]
-    public async Task GetGmailUrl_ContainsGmailReadonlyScope()
-    {
-        var response = await _client.GetAsync("/api/mail-connect/gmail/url");
-        var content = await response.Content.ReadFromJsonAsync<JsonElement>();
-        var url = content.GetProperty("url").GetString()!;
-
-        Assert.Contains("gmail.readonly", url);
-    }
-
-    [Fact]
-    public async Task GmailConnect_ValidCode_CreatesUserAndConnection()
+    public async Task GmailCallback_ValidCode_CreatesUserAndRedirects()
     {
         _factory.MockTokenExchanger.ExchangeCodeAsync(
             Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(new OAuthTokenResult(
                 "access-token-123", "refresh-token-456", DateTime.UtcNow.AddHours(1),
-                "google-sub-123", "test@gmail.com", "https://www.googleapis.com/auth/gmail.readonly"));
+                "google-sub-new", "test@gmail.com", "John", "Doe", "https://www.googleapis.com/auth/gmail.readonly"));
 
-        var request = new { code = "valid-auth-code", firstName = "John", lastName = "Doe" };
-        var response = await _client.PostAsJsonAsync("/api/mail-connect/gmail/connect", request);
+        var response = await _client.GetAsync("/api/v1/mail-connect/gmail/callback?code=valid-auth-code");
 
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        var location = response.Headers.Location!.ToString();
+        Assert.Contains("http://localhost:4200/dashboard", location);
+        Assert.Contains("userId=", location);
+        Assert.Contains("connectionId=", location);
 
-        var content = await response.Content.ReadFromJsonAsync<JsonElement>();
-        var userId = content.GetProperty("userId").GetString();
-        var emailConnectionId = content.GetProperty("emailConnectionId").GetString();
-        Assert.NotNull(userId);
-        Assert.NotNull(emailConnectionId);
-        Assert.True(Guid.TryParse(userId, out _));
-        Assert.True(Guid.TryParse(emailConnectionId, out _));
+        // Extract userId from redirect URL
+        var uri = new Uri(location);
+        var query = System.Web.HttpUtility.ParseQueryString(uri.Query);
+        var userId = Guid.Parse(query["userId"]!);
+        var connectionId = Guid.Parse(query["connectionId"]!);
 
         // Verify user was persisted
         using var db = _factory.CreateDbContext();
-        var user = await db.Users.FindAsync(Guid.Parse(userId));
+        var user = await db.Users.FindAsync(userId);
         Assert.NotNull(user);
         Assert.Equal("John", user.FirstName);
         Assert.Equal("Doe", user.LastName);
 
         // Verify email connection was persisted
-        var conn = await db.EmailConnections.FindAsync(Guid.Parse(emailConnectionId));
+        var conn = await db.EmailConnections.FindAsync(connectionId);
         Assert.NotNull(conn);
         Assert.Equal("refresh-token-456", conn.RefreshToken);
         Assert.Equal("test@gmail.com", conn.Email);
@@ -83,81 +76,73 @@ public class MailConnectControllerTests : IClassFixture<CustomWebApplicationFact
     }
 
     [Fact]
-    public async Task GmailConnect_WithExistingUserId_AttachesConnection()
-    {
-        // Seed a user
-        Guid userId;
-        using (var db = _factory.CreateDbContext())
-        {
-            var user = new User { Id = Guid.NewGuid(), FirstName = "Existing", LastName = "User" };
-            db.Users.Add(user);
-            await db.SaveChangesAsync();
-            userId = user.Id;
-        }
-
-        _factory.MockTokenExchanger.ExchangeCodeAsync(
-            Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(new OAuthTokenResult(
-                "at", "rt", DateTime.UtcNow.AddHours(1),
-                "sub-456", "second@gmail.com", "gmail.readonly"));
-
-        var request = new { code = "code2", firstName = "Existing", lastName = "User", userId };
-        var response = await _client.PostAsJsonAsync("/api/mail-connect/gmail/connect", request);
-
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-
-        var content = await response.Content.ReadFromJsonAsync<JsonElement>();
-        Assert.Equal(userId.ToString(), content.GetProperty("userId").GetString());
-        Assert.NotNull(content.GetProperty("emailConnectionId").GetString());
-    }
-
-    [Fact]
-    public async Task GmailConnect_SameSubjectId_UpsertsConnection()
+    public async Task GmailCallback_SameSubjectId_UpsertAndDoesNotCreateNewUser()
     {
         _factory.MockTokenExchanger.ExchangeCodeAsync(
             Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(new OAuthTokenResult(
                 "at1", "rt-old", DateTime.UtcNow.AddHours(1),
-                "same-sub", "same@gmail.com", "gmail.readonly"));
+                "upsert-sub", "same@gmail.com", "Upsert", "Test", "gmail.readonly"));
 
-        var request = new { code = "code-first", firstName = "Upsert", lastName = "Test" };
-        var response1 = await _client.PostAsJsonAsync("/api/mail-connect/gmail/connect", request);
-        var content1 = await response1.Content.ReadFromJsonAsync<JsonElement>();
-        var connId1 = content1.GetProperty("emailConnectionId").GetString();
-        var userId = content1.GetProperty("userId").GetString();
+        var response1 = await _client.GetAsync("/api/v1/mail-connect/gmail/callback?code=code-first");
+        var location1 = response1.Headers.Location!.ToString();
+        var query1 = System.Web.HttpUtility.ParseQueryString(new Uri(location1).Query);
+        var connId1 = query1["connectionId"]!;
+        var userId1 = query1["userId"]!;
 
         // Connect again with same subjectId but new refresh token
         _factory.MockTokenExchanger.ExchangeCodeAsync(
             Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(new OAuthTokenResult(
                 "at2", "rt-new", DateTime.UtcNow.AddHours(1),
-                "same-sub", "same@gmail.com", "gmail.readonly"));
+                "upsert-sub", "same@gmail.com", "Upsert", "Test", "gmail.readonly"));
 
-        var request2 = new { code = "code-second", firstName = "Upsert", lastName = "Test", userId = Guid.Parse(userId!) };
-        var response2 = await _client.PostAsJsonAsync("/api/mail-connect/gmail/connect", request2);
-        var content2 = await response2.Content.ReadFromJsonAsync<JsonElement>();
-        var connId2 = content2.GetProperty("emailConnectionId").GetString();
+        var response2 = await _client.GetAsync("/api/v1/mail-connect/gmail/callback?code=code-second");
+        var location2 = response2.Headers.Location!.ToString();
+        var query2 = System.Web.HttpUtility.ParseQueryString(new Uri(location2).Query);
+        var connId2 = query2["connectionId"]!;
+        var userId2 = query2["userId"]!;
 
-        // Same connection ID (upserted, not duplicated)
+        // Same user and connection (upserted, not duplicated)
         Assert.Equal(connId1, connId2);
+        Assert.Equal(userId1, userId2);
 
         // Verify new refresh token
         using var db = _factory.CreateDbContext();
-        var conn = await db.EmailConnections.FindAsync(Guid.Parse(connId2!));
+        var conn = await db.EmailConnections.FindAsync(Guid.Parse(connId2));
         Assert.Equal("rt-new", conn!.RefreshToken);
     }
 
     [Fact]
-    public async Task GmailConnect_CallsTokenExchangerWithCode()
+    public async Task GmailCallback_ErrorParam_RedirectsToFrontendWithError()
+    {
+        var response = await _client.GetAsync("/api/v1/mail-connect/gmail/callback?error=access_denied");
+
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        var location = response.Headers.Location!.ToString();
+        Assert.Contains("http://localhost:4200/connect?error=access_denied", location);
+    }
+
+    [Fact]
+    public async Task GmailCallback_NoCode_RedirectsToFrontendWithError()
+    {
+        var response = await _client.GetAsync("/api/v1/mail-connect/gmail/callback");
+
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        var location = response.Headers.Location!.ToString();
+        Assert.Contains("http://localhost:4200/connect?error=no_code", location);
+    }
+
+    [Fact]
+    public async Task GmailCallback_CallsTokenExchangerWithCode()
     {
         _factory.MockTokenExchanger.ExchangeCodeAsync(
             Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(new OAuthTokenResult(
                 "at", "rt", DateTime.UtcNow.AddHours(1),
-                "sub", "e@g.com", "scopes"));
+                "sub-verify", "e@g.com", "Jane", "Smith", "scopes"));
 
-        var request = new { code = "my-special-code", firstName = "Jane", lastName = "Smith" };
-        await _client.PostAsJsonAsync("/api/mail-connect/gmail/connect", request);
+        await _client.GetAsync("/api/v1/mail-connect/gmail/callback?code=my-special-code");
 
         await _factory.MockTokenExchanger.Received(1)
             .ExchangeCodeAsync("my-special-code", Arg.Any<CancellationToken>());

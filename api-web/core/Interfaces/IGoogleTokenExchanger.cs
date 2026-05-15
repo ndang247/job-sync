@@ -6,6 +6,8 @@ public record OAuthTokenResult(
     DateTime ExpiresAtUtc,
     string SubjectId,
     string Email,
+    string GivenName,
+    string FamilyName,
     string GrantedScopes);
 
 public interface IGoogleTokenExchanger
