@@ -1,7 +1,6 @@
-using Google.Apis.Auth.OAuth2;
-using Google.Apis.Auth.OAuth2.Flows;
 using Google.Apis.Gmail.v1;
 using core.Entities;
+using core.Interfaces;
 using infrastructure.Data;
 using api_contracts.Requests;
 using Microsoft.AspNetCore.Mvc;
@@ -14,11 +13,13 @@ public class MailConnectController : ControllerBase
 {
     private readonly AppDbContext _dbContext;
     private readonly IConfiguration _configuration;
+    private readonly IGoogleTokenExchanger _tokenExchanger;
 
-    public MailConnectController(AppDbContext dbContext, IConfiguration configuration)
+    public MailConnectController(AppDbContext dbContext, IConfiguration configuration, IGoogleTokenExchanger tokenExchanger)
     {
         _dbContext = dbContext;
         _configuration = configuration;
+        _tokenExchanger = tokenExchanger;
     }
 
     [HttpGet("gmail/url")]
@@ -43,30 +44,16 @@ public class MailConnectController : ControllerBase
     [HttpPost("gmail/connect")]
     public async Task<IActionResult> GmailConnect([FromBody] GmailConnectRequest request)
     {
-        var flow = new GoogleAuthorizationCodeFlow(new GoogleAuthorizationCodeFlow.Initializer
-        {
-            ClientSecrets = new ClientSecrets
-            {
-                ClientId = _configuration["Google:ClientId"]!,
-                ClientSecret = _configuration["Google:ClientSecret"]!
-            },
-            Scopes = [GmailService.Scope.GmailReadonly]
-        });
-
-        var tokenResponse = await flow.ExchangeCodeForTokenAsync(
-            "user",
-            request.Code,
-            _configuration["Google:RedirectUri"]!,
-            CancellationToken.None);
+        var tokenResult = await _tokenExchanger.ExchangeCodeAsync(request.Code);
 
         var user = new User
         {
             Id = Guid.NewGuid(),
             FirstName = request.FirstName,
             LastName = request.LastName,
-            AccessToken = tokenResponse.AccessToken,
-            RefreshToken = tokenResponse.RefreshToken,
-            TokenExpiresAt = tokenResponse.IssuedUtc.AddSeconds(tokenResponse.ExpiresInSeconds ?? 3600)
+            AccessToken = tokenResult.AccessToken,
+            RefreshToken = tokenResult.RefreshToken,
+            TokenExpiresAt = tokenResult.ExpiresAtUtc
         };
 
         _dbContext.Users.Add(user);

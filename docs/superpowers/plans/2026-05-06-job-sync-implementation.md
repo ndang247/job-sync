@@ -946,6 +946,8 @@ git commit -m "feat: implement channel-based concurrent background worker"
 > Added `api-contracts` classlib project for API request/response DTOs.
 > `Google.Apis.Gmail.v1` package added to web-api.
 > `AddControllers()` and `MapControllers()` wired in Program.cs.
+> **Refactored:** Extracted `IGoogleTokenExchanger` interface (core) + `GoogleTokenExchanger` implementation (infrastructure)
+> to decouple OAuth token exchange from controller — enables integration testing without hitting Google.
 
 **Files:**
 
@@ -1923,7 +1925,55 @@ git commit -m "feat: add initial EF Core migration"
 
 ---
 
-## Task 20: Final Integration Verification
+## Task 20: Controller Integration Tests ✅ COMPLETED
+
+> TDD integration tests for all controller endpoints using `WebApplicationFactory`.
+> Test project: `tests/web-api.IntegrationTests` (xunit + NSubstitute + InMemory EF Core).
+> `CustomWebApplicationFactory` swaps Npgsql → InMemory, mocks `IGoogleTokenExchanger` and `ISyncJobChannel`,
+> disables `SyncBackgroundService`. Added `JsonDocument` value converter to `SyncJobConfiguration` for InMemory compat.
+> Extracted `IGoogleTokenExchanger` (core) + `GoogleTokenExchanger` (infrastructure) to decouple OAuth from controller.
+> `public partial class Program` added to enable `WebApplicationFactory<Program>`.
+> 17 tests, all passing: MailConnect (4), Sync (13).
+
+**Files:**
+
+- Created: `core/Interfaces/IGoogleTokenExchanger.cs`
+- Created: `infrastructure/Services/GoogleTokenExchanger.cs`
+- Modified: `web-api/Controllers/MailConnectController.cs` (inject `IGoogleTokenExchanger`)
+- Modified: `web-api/Program.cs` (register `IGoogleTokenExchanger`, add `partial class Program`)
+- Modified: `infrastructure/Data/Configurations/SyncJobConfiguration.cs` (add `JsonDocument` value converter)
+- Created: `tests/web-api.IntegrationTests/web-api.IntegrationTests.csproj`
+- Created: `tests/web-api.IntegrationTests/CustomWebApplicationFactory.cs`
+- Created: `tests/web-api.IntegrationTests/Controllers/MailConnectControllerTests.cs`
+- Created: `tests/web-api.IntegrationTests/Controllers/SyncControllerTests.cs`
+
+- [x] **Step 1: Create integration test project with xunit + WebApplicationFactory + NSubstitute + InMemory**
+- [x] **Step 2: Extract IGoogleTokenExchanger to make MailConnectController testable**
+- [x] **Step 3: Write MailConnectController tests (4 tests)**
+  - GetGmailUrl returns OK with OAuth URL containing required params
+  - GetGmailUrl URL contains gmail.readonly scope
+  - GmailConnect with valid code creates user and returns userId
+  - GmailConnect calls token exchanger with correct code
+- [x] **Step 4: Write SyncController tests (13 tests)**
+  - StartSync valid user returns OK with jobId
+  - StartSync persists job in DB as Pending
+  - StartSync writes jobId to channel
+  - StartSync non-existent user returns 400
+  - StartSync duplicate active (Pending) job returns 409
+  - StartSync duplicate active (Processing) job returns 409
+  - StartSync with completed job allows new sync
+  - StartSync with failed job allows new sync
+  - GetStatus existing job returns details (progress, stage)
+  - GetStatus completed job returns results array
+  - GetStatus failed job returns error message
+  - GetStatus non-existent job returns 404
+  - GetStatus invalid guid returns 404
+- [x] **Step 5: Fix JsonDocument InMemory compat via ValueConverter in SyncJobConfiguration**
+- [x] **Step 6: All 17 tests passing**
+
+---
+
+## Task 21: Final Integration Verification
 
 - [ ] **Step 1: Run all tests**
 

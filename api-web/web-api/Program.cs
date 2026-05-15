@@ -20,6 +20,7 @@ builder.Services.AddScoped<IGeminiService, GeminiService>();
 builder.Services.AddScoped<ISyncOrchestrator, SyncOrchestrator>();
 builder.Services.AddScoped<ISyncProgressReporter, SyncProgressReporter>();
 builder.Services.AddScoped<ISyncHubNotifier, SyncHubNotifier>();
+builder.Services.AddScoped<IGoogleTokenExchanger, GoogleTokenExchanger>();
 builder.Services.AddSingleton<ISyncJobChannel, SyncJobChannel>();
 builder.Services.AddHostedService<SyncBackgroundService>();
 
@@ -43,3 +44,6 @@ app.MapControllers();
 app.MapHub<SyncHub>("/hubs/sync");
 
 app.Run();
+
+// Make the implicit Program class public so test projects can access it
+public partial class Program { }
