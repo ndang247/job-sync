@@ -21,8 +21,6 @@ public class SyncController : ControllerBase
         _syncJobChannel = syncJobChannel;
     }
 
-    // TODO: This endpoint needs improvement. Future iteration will add authentication,
-    // allowing us to remove UserId from the request body and use the authenticated user's ID instead.
     [HttpPost]
     public async Task<IActionResult> StartSync([FromBody] StartSyncRequest request)
     {
@@ -30,16 +28,26 @@ public class SyncController : ControllerBase
         if (!userExists)
             return BadRequest(new { error = "User not found" });
 
+        var connection = await _dbContext.EmailConnections
+            .FirstOrDefaultAsync(ec => ec.Id == request.EmailConnectionId);
+
+        if (connection is null || connection.UserId != request.UserId)
+            return Conflict(new { code = "CONNECTION_REQUIRES_GRANT", error = "Email connection requires grant/reconnect." });
+
+        if (connection.Status != EmailConnectionStatus.Active)
+            return Conflict(new { code = "CONNECTION_REQUIRES_GRANT", error = "Email connection requires grant/reconnect." });
+
         var hasActiveJob = await _dbContext.SyncJobs.AnyAsync(j =>
-            j.UserId == request.UserId &&
+            j.EmailConnectionId == request.EmailConnectionId &&
             (j.Status == SyncJobStatus.Pending || j.Status == SyncJobStatus.Processing));
         if (hasActiveJob)
-            return Conflict(new { error = "A sync job is already in progress for this user" });
+            return Conflict(new { error = "A sync job is already in progress for this email connection" });
 
         var job = new SyncJob
         {
             Id = Guid.NewGuid(),
             UserId = request.UserId,
+            EmailConnectionId = request.EmailConnectionId,
             Status = SyncJobStatus.Pending
         };
 

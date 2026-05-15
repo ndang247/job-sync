@@ -29,6 +29,10 @@ public class SyncJobConfiguration : IEntityTypeConfiguration<SyncJob>
             .WithMany()
             .HasForeignKey(s => s.UserId)
             .OnDelete(DeleteBehavior.Cascade);
+        builder.HasOne(s => s.EmailConnection)
+            .WithMany()
+            .HasForeignKey(s => s.EmailConnectionId)
+            .OnDelete(DeleteBehavior.Restrict);
         builder.HasQueryFilter(s => s.DeletedAt == null);
     }
 }

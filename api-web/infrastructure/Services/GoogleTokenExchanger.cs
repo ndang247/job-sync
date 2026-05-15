@@ -1,3 +1,4 @@
+using System.IdentityModel.Tokens.Jwt;
 using Google.Apis.Auth.OAuth2;
 using Google.Apis.Auth.OAuth2.Flows;
 using core.Interfaces;
@@ -32,9 +33,25 @@ public class GoogleTokenExchanger : IGoogleTokenExchanger
             _configuration["Google:RedirectUri"]!,
             cancellationToken);
 
+        var subjectId = string.Empty;
+        var email = string.Empty;
+
+        if (!string.IsNullOrEmpty(tokenResponse.IdToken))
+        {
+            var handler = new JwtSecurityTokenHandler();
+            var jwt = handler.ReadJwtToken(tokenResponse.IdToken);
+            subjectId = jwt.Claims.FirstOrDefault(c => c.Type == "sub")?.Value ?? string.Empty;
+            email = jwt.Claims.FirstOrDefault(c => c.Type == "email")?.Value ?? string.Empty;
+        }
+
+        var grantedScopes = tokenResponse.Scope ?? Google.Apis.Gmail.v1.GmailService.Scope.GmailReadonly;
+
         return new OAuthTokenResult(
             tokenResponse.AccessToken,
             tokenResponse.RefreshToken,
-            tokenResponse.IssuedUtc.AddSeconds(tokenResponse.ExpiresInSeconds ?? 3600));
+            tokenResponse.IssuedUtc.AddSeconds(tokenResponse.ExpiresInSeconds ?? 3600),
+            subjectId,
+            email,
+            grantedScopes);
     }
 }

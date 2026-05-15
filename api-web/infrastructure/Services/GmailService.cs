@@ -4,6 +4,8 @@ using Google.Apis.Auth.OAuth2.Responses;
 using Google.Apis.Gmail.v1;
 using Google.Apis.Gmail.v1.Data;
 using Google.Apis.Services;
+using core.Entities;
+using core.Enums;
 using core.Interfaces;
 using infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
@@ -22,12 +24,13 @@ public class GmailService : IGmailService
         _configuration = configuration;
     }
 
-    public async Task<List<EmailMessage>> FetchEmailsAsync(Guid userId, CancellationToken cancellationToken = default)
+    public async Task<List<EmailMessage>> FetchEmailsAsync(Guid emailConnectionId, CancellationToken cancellationToken = default)
     {
-        var user = await _dbContext.Users.FirstOrDefaultAsync(u => u.Id == userId, cancellationToken)
-            ?? throw new InvalidOperationException($"User {userId} not found");
+        var connection = await _dbContext.EmailConnections.FirstOrDefaultAsync(
+            ec => ec.Id == emailConnectionId, cancellationToken)
+            ?? throw new InvalidOperationException($"EmailConnection {emailConnectionId} not found");
 
-        var credential = await GetCredentialAsync(user, cancellationToken);
+        var credential = await GetCredentialAsync(connection, cancellationToken);
 
         using var gmailService = new Google.Apis.Gmail.v1.GmailService(new BaseClientService.Initializer
         {
@@ -63,7 +66,7 @@ public class GmailService : IGmailService
         return emails;
     }
 
-    private async Task<UserCredential> GetCredentialAsync(core.Entities.User user, CancellationToken cancellationToken)
+    private async Task<UserCredential> GetCredentialAsync(EmailConnection connection, CancellationToken cancellationToken)
     {
         var flow = new GoogleAuthorizationCodeFlow(new GoogleAuthorizationCodeFlow.Initializer
         {
@@ -75,22 +78,26 @@ public class GmailService : IGmailService
             Scopes = [Google.Apis.Gmail.v1.GmailService.Scope.GmailReadonly]
         });
 
+        // Build credential from refresh token only — access token minted at runtime
         var token = new TokenResponse
         {
-            AccessToken = user.AccessToken,
-            RefreshToken = user.RefreshToken,
-            ExpiresInSeconds = (long)(user.TokenExpiresAt - DateTime.UtcNow).TotalSeconds
+            RefreshToken = connection.RefreshToken,
+            ExpiresInSeconds = 0 // force refresh
         };
 
         var credential = new UserCredential(flow, "user", token);
 
-        if (credential.Token.IsStale)
+        try
         {
             await credential.RefreshTokenAsync(cancellationToken);
-            user.AccessToken = credential.Token.AccessToken;
-            user.RefreshToken = credential.Token.RefreshToken ?? user.RefreshToken;
-            user.TokenExpiresAt = credential.Token.IssuedUtc.AddSeconds(credential.Token.ExpiresInSeconds ?? 3600);
+        }
+        catch (TokenResponseException ex) when (
+            ex.Error?.Error == "invalid_grant" ||
+            ex.Error?.Error == "unauthorized_client")
+        {
+            connection.Status = EmailConnectionStatus.NeedsReconnect;
             await _dbContext.SaveChangesAsync(cancellationToken);
+            throw new InvalidOperationException("Email connection requires grant/reconnect.");
         }
 
         return credential;

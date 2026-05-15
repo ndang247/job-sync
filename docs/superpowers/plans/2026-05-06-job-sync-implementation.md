@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build a .NET 10 REST API that syncs job applications from Gmail via Gemini AI classification.
+**Goal:** Build a .NET 10 REST API that syncs job applications from multiple Gmail connections per user via Gemini AI classification.
 
-**Architecture:** Async pipeline — client triggers sync, background worker fetches Gmail emails, batches them through Gemini for classification/deduplication, stores results in PostgreSQL. SignalR pushes real-time progress to client; polling endpoint as fallback.
+**Architecture:** Async pipeline — client triggers sync for a specific email connection, background worker mints short-lived access token from refresh token, fetches Gmail emails, batches through Gemini for classification/deduplication, stores results in PostgreSQL. SignalR pushes real-time progress to client; polling endpoint as fallback.
 
 **Tech Stack:** .NET 10, EF Core + Npgsql (PostgreSQL), Google.Apis.Gmail.v1, Google AI SDK, BackgroundService, SignalR
 
@@ -36,6 +36,7 @@ api-web/
 │   ├── Entities/
 │   │   ├── BaseEntity.cs
 │   │   ├── User.cs
+│   │   ├── EmailConnection.cs
 │   │   └── SyncJob.cs
 │   ├── Enums/
 │   │   └── SyncJobStatus.cs
@@ -54,6 +55,7 @@ api-web/
 │   │   ├── AppDbContext.cs
 │   │   ├── Configurations/
 │   │   │   ├── UserConfiguration.cs
+│   │   │   ├── EmailConnectionConfiguration.cs
 │   │   │   └── SyncJobConfiguration.cs
 │   │   └── Migrations/
 │   │       ├── 20260510042549_InitialCreate.cs
@@ -62,6 +64,7 @@ api-web/
 │   ├── Services/
 │   │   ├── GmailService.cs
 │   │   ├── GeminiService.cs
+│   │   ├── GoogleTokenExchanger.cs
 │   │   ├── SyncOrchestrator.cs
 │   │   ├── SyncProgressReporter.cs
 │   │   └── SyncJobChannel.cs
@@ -2000,4 +2003,120 @@ Expected: HTTP 200 from Swagger.
 ```bash
 git add -A
 git commit -m "chore: verify full integration build and test pass"
+```
+
+---
+
+## Task 22: Multi-Connection + Security Uplift (2026-05-15)
+
+> Update existing implementation to support multiple Gmail connections per user and remove persisted access tokens. Sync must run against a selected `emailConnectionId`, mint access token at runtime from refresh token, and return reconnect-required errors when connection is missing/revoked/expired.
+
+**Files:**
+
+- Modify: `core/Entities/User.cs`
+- Create: `core/Entities/EmailConnection.cs`
+- Modify: `core/Entities/SyncJob.cs`
+- Create: `core/Enums/EmailConnectionStatus.cs`
+- Modify: `core/Interfaces/IGmailService.cs`
+- Modify: `core/Interfaces/ISyncOrchestrator.cs` (if signature update needed for connection id)
+- Modify: `api-contracts/Requests/GmailConnectRequest.cs`
+- Modify: `api-contracts/Requests/StartSyncRequest.cs`
+- Modify: `infrastructure/Data/AppDbContext.cs`
+- Modify: `infrastructure/Data/Configurations/UserConfiguration.cs`
+- Create: `infrastructure/Data/Configurations/EmailConnectionConfiguration.cs`
+- Modify: `infrastructure/Data/Configurations/SyncJobConfiguration.cs`
+- Create: `infrastructure/Data/Migrations/*_AddEmailConnectionsAndConnectionScopedSync.cs`
+- Modify: `infrastructure/Data/Migrations/AppDbContextModelSnapshot.cs`
+- Modify: `web-api/Controllers/MailConnectController.cs`
+- Modify: `web-api/Controllers/SyncController.cs`
+- Modify: `infrastructure/Services/GmailService.cs`
+- Modify: `infrastructure/Services/SyncOrchestrator.cs`
+- Modify: `worker/SyncBackgroundService.cs`
+- Modify: `tests/web-api.IntegrationTests/Controllers/MailConnectControllerTests.cs`
+- Modify: `tests/web-api.IntegrationTests/Controllers/SyncControllerTests.cs`
+
+- [ ] **Step 1: Write failing integration tests for new contracts and behaviors**
+
+```text
+Add tests first:
+1) GmailConnect with existing userId creates EmailConnection and returns emailConnectionId.
+2) GmailConnect called again for same user + same subjectId upserts existing row.
+3) StartSync without valid active connection returns 409 with code CONNECTION_REQUIRES_GRANT.
+4) StartSync for connection not owned by user returns 409 with code CONNECTION_REQUIRES_GRANT.
+5) StartSync with active Pending/Processing job on same EmailConnectionId returns 409.
+6) StartSync allows concurrent jobs for different EmailConnectionId values of same user.
+```
+
+- [ ] **Step 2: Run tests to confirm RED**
+
+```bash
+dotnet test tests/web-api.IntegrationTests --filter "MailConnectControllerTests|SyncControllerTests"
+```
+
+Expected: FAIL for missing fields/entity/validation behavior.
+
+- [ ] **Step 3: Implement domain and schema changes**
+
+```text
+1) Remove AccessToken/RefreshToken/TokenExpiresAt from User.
+2) Add EmailConnection entity with:
+    Id, UserId, Email, SubjectId, RefreshToken, GrantedScopes, Status, timestamps.
+3) Add EmailConnectionStatus enum: Active, NeedsReconnect, Revoked.
+4) Add SyncJob.EmailConnectionId + FK.
+5) Add DbSet<EmailConnection>, configuration class, and FK mappings.
+6) Add migration:
+    - Create EmailConnections table.
+    - Add EmailConnectionId to SyncJobs with FK + index.
+    - Drop token columns from Users.
+```
+
+- [ ] **Step 4: Implement API contract and controller changes**
+
+```text
+1) GmailConnectRequest:
+    - Add optional UserId.
+2) StartSyncRequest:
+    - Add EmailConnectionId.
+3) MailConnectController:
+    - If UserId missing: create user from FirstName/LastName.
+    - If UserId provided: verify user exists.
+    - Exchange code; derive subject/email/scopes.
+    - Upsert EmailConnection by (UserId, SubjectId), set Status=Active.
+    - Return userId + emailConnectionId + status.
+4) SyncController:
+    - Validate user exists.
+    - Validate connection exists, belongs to user, status Active.
+    - Return 409 with { code, error } when grant required.
+    - Create SyncJob with UserId + EmailConnectionId.
+    - Enforce active-job conflict per EmailConnectionId.
+```
+
+- [ ] **Step 5: Implement runtime token minting and reconnect handling**
+
+```text
+1) Update GmailService to fetch by emailConnectionId (or load connection via sync job context).
+2) Build credential from refresh token only.
+3) Mint/refresh access token at sync runtime; do not persist access token.
+4) On invalid_grant/revoked/expired:
+    - Set EmailConnection.Status = NeedsReconnect.
+    - Throw domain error message for reconnect.
+5) Ensure SyncBackgroundService catches this and marks job Failed with reconnect message.
+```
+
+- [ ] **Step 6: Run focused tests to confirm GREEN**
+
+```bash
+dotnet test tests/web-api.IntegrationTests --filter "MailConnectControllerTests|SyncControllerTests"
+dotnet test
+```
+
+Expected: PASS.
+
+- [ ] **Step 7: Verification + commit**
+
+```bash
+dotnet build
+dotnet test
+git add -A
+git commit -m "feat: support multi-email connections with refresh-token-only sync"
 ```

@@ -10,5 +10,5 @@ public class EmailMessage
 
 public interface IGmailService
 {
-    Task<List<EmailMessage>> FetchEmailsAsync(Guid userId, CancellationToken cancellationToken = default);
+    Task<List<EmailMessage>> FetchEmailsAsync(Guid emailConnectionId, CancellationToken cancellationToken = default);
 }

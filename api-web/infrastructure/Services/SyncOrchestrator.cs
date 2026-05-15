@@ -15,11 +15,11 @@ public class SyncOrchestrator : ISyncOrchestrator
         _geminiService = geminiService;
     }
 
-    public async Task<List<JobApplication>> ExecuteSyncAsync(Guid jobId, Guid userId, ISyncProgressReporter progressReporter, CancellationToken cancellationToken = default)
+    public async Task<List<JobApplication>> ExecuteSyncAsync(Guid jobId, Guid emailConnectionId, ISyncProgressReporter progressReporter, CancellationToken cancellationToken = default)
     {
         await progressReporter.ReportProgressAsync(jobId, "Fetching emails", 5, cancellationToken);
 
-        var emails = await _gmailService.FetchEmailsAsync(userId, cancellationToken);
+        var emails = await _gmailService.FetchEmailsAsync(emailConnectionId, cancellationToken);
 
         if (emails.Count == 0)
             return new List<JobApplication>();

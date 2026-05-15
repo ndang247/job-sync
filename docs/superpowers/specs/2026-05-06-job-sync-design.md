@@ -2,49 +2,66 @@
 
 ## Overview
 
-Job Sync tracks job applications by syncing from a user's Gmail inbox. Users connect their Gmail account via OAuth, then trigger a sync that fetches emails from the last 30 days, processes them through Gemini AI to identify and deduplicate job application emails, and returns structured results.
+Job Sync tracks job applications by syncing from Gmail inboxes. A user can connect multiple Gmail accounts via OAuth, then trigger sync for a specific email connection. Sync fetches emails from the last 30 days, processes them through Gemini AI to identify and deduplicate job application emails, and returns structured results.
 
 ## Decisions
 
 - No authentication — anyone can use the app, connects own Gmail
-- PostgreSQL — user table + sync jobs with `jsonb` for results
+- PostgreSQL — users + email connections + sync jobs with `jsonb` for results
 - Job applications returned via sync job results (not separately persisted)
 - Google AI SDK (Gemini) for email classification and deduplication
 - Batch emails to Gemini, deduplicate within batch + final merge pass across batches
 - REST API with controllers, .NET 10
 - Frontend-agnostic API (React Native/Expo likely, but API works with any client)
 - Async processing with SignalR real-time progress (polling as fallback)
+- Email connection is upserted by `(UserId, SubjectId)`
+- Sync request must include `emailConnectionId`
+- Access token is not persisted; minted from refresh token at sync time
+- On refresh token invalid/revoked/expired, mark connection `NeedsReconnect` and return reconnect-required errors
 
 ## Data Model
 
 ### Users
 
-| Column         | Type         | Notes                        |
-| -------------- | ------------ | ---------------------------- |
-| Id             | UUID         | PK                           |
-| FirstName      | varchar(100) |                              |
-| LastName       | varchar(100) |                              |
-| AccessToken    | text         | encrypted, provider-agnostic |
-| RefreshToken   | text         | encrypted, provider-agnostic |
-| TokenExpiresAt | timestamp    |                              |
-| CreatedAt      | timestamp    |                              |
-| UpdatedAt      | timestamp?   |                              |
-| DeletedAt      | timestamp?   | soft delete                  |
+| Column    | Type         | Notes       |
+| --------- | ------------ | ----------- |
+| Id        | UUID         | PK          |
+| FirstName | varchar(100) |             |
+| LastName  | varchar(100) |             |
+| CreatedAt | timestamp    |             |
+| UpdatedAt | timestamp?   |             |
+| DeletedAt | timestamp?   | soft delete |
+
+### EmailConnections
+
+| Column        | Type        | Notes                             |
+| ------------- | ----------- | --------------------------------- |
+| Id            | UUID        | PK                                |
+| UserId        | UUID        | FK → Users                        |
+| Email         | text        | connected mailbox email           |
+| SubjectId     | text        | Google account unique id (`sub`)  |
+| RefreshToken  | text        | provider token for minting access |
+| GrantedScopes | text        | comma-separated OAuth scopes      |
+| Status        | varchar(30) | active, needs_reconnect, revoked  |
+| CreatedAt     | timestamp   |                                   |
+| UpdatedAt     | timestamp?  |                                   |
+| DeletedAt     | timestamp?  | soft delete                       |
 
 ### SyncJobs
 
-| Column    | Type         | Notes                                  |
-| --------- | ------------ | -------------------------------------- |
-| Id        | UUID         | PK                                     |
-| UserId    | UUID         | FK → Users                             |
-| Status    | varchar(20)  | pending, processing, completed, failed |
-| Progress  | int          | 0-100 percentage                       |
-| Stage     | varchar(100) | current stage label                    |
-| Result    | jsonb        | array of job applications              |
-| Error     | text         | error message if failed                |
-| CreatedAt | timestamp    |                                        |
-| UpdatedAt | timestamp?   |                                        |
-| DeletedAt | timestamp?   | soft delete                            |
+| Column            | Type         | Notes                                  |
+| ----------------- | ------------ | -------------------------------------- |
+| Id                | UUID         | PK                                     |
+| UserId            | UUID         | FK → Users                             |
+| EmailConnectionId | UUID         | FK → EmailConnections                  |
+| Status            | varchar(20)  | pending, processing, completed, failed |
+| Progress          | int          | 0-100 percentage                       |
+| Stage             | varchar(100) | current stage label                    |
+| Result            | jsonb        | array of job applications              |
+| Error             | text         | error message if failed                |
+| CreatedAt         | timestamp    |                                        |
+| UpdatedAt         | timestamp?   |                                        |
+| DeletedAt         | timestamp?   | soft delete                            |
 
 ### Result JSON Shape
 
@@ -63,24 +80,24 @@ Job Sync tracks job applications by syncing from a user's Gmail inbox. Users con
 
 ### Mail Connect
 
-| Method | Endpoint                          | Description                                                 |
-| ------ | --------------------------------- | ----------------------------------------------------------- |
-| GET    | `/api/mail-connect/gmail/url`     | Return Gmail OAuth consent URL for client to redirect       |
-| POST   | `/api/mail-connect/gmail/connect` | Receive OAuth code, exchange for tokens, create/update user |
+| Method | Endpoint                          | Description                                                     |
+| ------ | --------------------------------- | --------------------------------------------------------------- |
+| GET    | `/api/mail-connect/gmail/url`     | Return Gmail OAuth consent URL for client to redirect           |
+| POST   | `/api/mail-connect/gmail/connect` | Receive OAuth code, create/update user, upsert email connection |
 
 ### Sync
 
-| Method | Endpoint                   | Description                                              |
-| ------ | -------------------------- | -------------------------------------------------------- |
-| POST   | `/api/sync`                | Start sync job (body: userId), return job ID immediately |
-| GET    | `/api/sync/status/{jobId}` | Poll job status + results when completed                 |
+| Method | Endpoint                   | Description                                                                  |
+| ------ | -------------------------- | ---------------------------------------------------------------------------- |
+| POST   | `/api/sync`                | Start sync job (body: userId + emailConnectionId), return job ID immediately |
+| GET    | `/api/sync/status/{jobId}` | Poll job status + results when completed                                     |
 
 ## Architecture
 
 ### Components
 
 - **API Layer** — REST controllers, request validation
-- **Gmail Service** — handles OAuth token refresh, fetches emails via Gmail API
+- **Gmail Service** — mints short-lived access token from stored refresh token, fetches emails via Gmail API
 - **Gemini Service** — batches emails, sends to Gemini, parses structured response
 - **Sync Orchestrator** — coordinates the pipeline (fetch → batch → process → merge → store result)
 - **Progress Reporter** — persists progress to DB + delegates to ISyncHubNotifier for SignalR push
@@ -90,24 +107,26 @@ Job Sync tracks job applications by syncing from a user's Gmail inbox. Users con
 
 ### Concurrency Constraints
 
-- One active sync job per user — API returns 409 Conflict if user already has a Pending/Processing job
+- One active sync job per email connection — API returns 409 Conflict if that connection already has a Pending/Processing job
 - No global concurrency limit — all users are served concurrently
 - On startup, worker recovers orphaned Pending/Processing jobs from DB and re-queues them via the channel
 - Worker runs in-process with the web API (Channel<T> is in-memory)
 
 ### Sync Pipeline Flow
 
-1. Client calls `POST /api/sync` with userId
-2. Controller checks for existing Pending/Processing job for this user → 409 Conflict if exists
-3. Controller creates SyncJob (status=pending), writes jobId to SyncJobChannel, returns jobId
-4. Background worker reads jobId from channel, spawns a new Task with its own DI scope
-5. Worker loads job from DB, sets status=processing
-6. Gmail Service refreshes token if needed, fetches last 30 days of emails
-7. Sync Orchestrator batches emails (20 per batch)
-8. Each batch → Gemini Service: identify job applications, deduplicate within batch, return structured JSON
-9. After all batches complete, final merge pass → Gemini: deduplicate across all batch results
-10. Store final result JSON in SyncJob, set status=completed
-11. Client receives results via SignalR events or polls `GET /api/sync/status/{jobId}`
+1. Client calls `POST /api/sync` with `userId` + `emailConnectionId`
+2. Controller validates user exists, connection exists, connection belongs to user, and connection status is `active`
+3. Controller checks for existing Pending/Processing job for this connection → 409 Conflict if exists
+4. Controller creates SyncJob (status=pending, includes `EmailConnectionId`), writes jobId to SyncJobChannel, returns jobId
+5. Background worker reads jobId from channel, spawns a new Task with its own DI scope
+6. Worker loads job from DB, sets status=processing
+7. Gmail Service mints short-lived access token from refresh token and fetches last 30 days of emails
+8. If token mint fails with revoked/expired grant, set EmailConnection status to `needs_reconnect` and fail job with reconnect message
+9. Sync Orchestrator batches emails (20 per batch)
+10. Each batch → Gemini Service: identify job applications, deduplicate within batch, return structured JSON
+11. After all batches complete, final merge pass → Gemini: deduplicate across all batch results
+12. Store final result JSON in SyncJob, set status=completed
+13. Client receives results via SignalR events or polls `GET /api/sync/status/{jobId}`
 
 ### Recommended Client Flow
 
@@ -123,14 +142,16 @@ Job Sync tracks job applications by syncing from a user's Gmail inbox. Users con
 2. Backend returns Google OAuth consent URL
 3. Client redirects user to Google
 4. User grants consent, Google redirects back with auth code
-5. Client calls `POST /api/mail-connect/gmail/connect` with code
-6. Backend exchanges code for access + refresh tokens
-7. Backend creates/updates User record with encrypted tokens
-8. Returns userId to client
+5. Client calls `POST /api/mail-connect/gmail/connect` with `code` and optional `userId`
+6. Backend exchanges code for tokens and reads account identity claims (`sub`, `email`, granted scopes)
+7. If `userId` missing, backend creates User; if present, backend verifies User exists
+8. Backend upserts EmailConnection using `(UserId, SubjectId)` and stores refresh token/scopes/status
+9. Returns `userId`, `emailConnectionId`, and connection status
 
 ### Error Flow
 
-- Any failure during processing → store error message in SyncJob, set status=failed
+- Missing connection / wrong owner / inactive connection on start sync → `409` with code `CONNECTION_REQUIRES_GRANT`
+- Refresh token revoked/expired/invalid grant during processing → set connection `needs_reconnect`, store error in SyncJob, set status=failed
 - Client polling receives status=failed with error message
 
 ## Project Structure
@@ -138,10 +159,10 @@ Job Sync tracks job applications by syncing from a user's Gmail inbox. Users con
 ```
 api-web/
 ├── web-api/                  # REST controllers, Program.cs, DI config, SignalR hub, SyncHubNotifier
-├── core/                     # Domain entities, interfaces (incl. ISyncHubNotifier, ISyncJobChannel), models, enums
-├── infrastructure/           # Gmail service, Gemini service, EF Core DbContext, SyncOrchestrator, SyncProgressReporter, SyncJobChannel
+├── core/                     # Domain entities (User, EmailConnection, SyncJob), interfaces (incl. ISyncHubNotifier, ISyncJobChannel), models, enums
+├── infrastructure/           # Gmail service, Gemini service, token exchange service, EF Core DbContext, SyncOrchestrator, SyncProgressReporter, SyncJobChannel
 ├── worker/                   # SyncBackgroundService (BackgroundService)
-└── api-contracts/            # Request DTOs (GmailConnectRequest, StartSyncRequest)
+└── api-contracts/            # Request DTOs (GmailConnectRequest with optional userId, StartSyncRequest with emailConnectionId)
 ```
 
 ## Tech Stack
@@ -210,9 +231,10 @@ Polling endpoint `GET /api/sync/status/{jobId}` still works — response include
 
 ## Error Handling
 
-| Scenario              | Behavior                                                |
-| --------------------- | ------------------------------------------------------- |
-| Token refresh failure | Mark job failed, error = "Gmail authentication expired" |
-| Gmail API error       | Retry once, then mark failed                            |
-| Gemini API error      | Retry batch once, then mark failed                      |
-| Unhandled exception   | Catch-all, mark job failed with message                 |
+| Scenario                               | Behavior                                               |
+| -------------------------------------- | ------------------------------------------------------ |
+| Connection missing/not active on start | Return 409 `CONNECTION_REQUIRES_GRANT`                 |
+| Token refresh invalid/revoked/expired  | Set EmailConnection `needs_reconnect`, mark job failed |
+| Gmail API error                        | Retry once, then mark failed                           |
+| Gemini API error                       | Retry batch once, then mark failed                     |
+| Unhandled exception                    | Catch-all, mark job failed with message                |

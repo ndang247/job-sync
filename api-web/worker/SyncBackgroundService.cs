@@ -74,7 +74,7 @@ public class SyncBackgroundService : BackgroundService
             job.Status = SyncJobStatus.Processing;
             await dbContext.SaveChangesAsync(cancellationToken);
 
-            var results = await orchestrator.ExecuteSyncAsync(job.Id, job.UserId, progressReporter, cancellationToken);
+            var results = await orchestrator.ExecuteSyncAsync(job.Id, job.EmailConnectionId, progressReporter, cancellationToken);
 
             job.Result = JsonSerializer.SerializeToDocument(results);
             job.Status = SyncJobStatus.Completed;

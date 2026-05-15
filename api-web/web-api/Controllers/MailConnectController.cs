@@ -1,9 +1,11 @@
 using Google.Apis.Gmail.v1;
 using core.Entities;
+using core.Enums;
 using core.Interfaces;
 using infrastructure.Data;
 using api_contracts.Requests;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 namespace web_api.Controllers;
 
@@ -39,26 +41,67 @@ public class MailConnectController : ControllerBase
         return Ok(new { url });
     }
 
-    // TODO: Future iteration should support connecting multiple accounts of the same email domain
-    // (e.g. multiple Gmail accounts) belonging to a single authenticated user.
     [HttpPost("gmail/connect")]
     public async Task<IActionResult> GmailConnect([FromBody] GmailConnectRequest request)
     {
         var tokenResult = await _tokenExchanger.ExchangeCodeAsync(request.Code);
 
-        var user = new User
-        {
-            Id = Guid.NewGuid(),
-            FirstName = request.FirstName,
-            LastName = request.LastName,
-            AccessToken = tokenResult.AccessToken,
-            RefreshToken = tokenResult.RefreshToken,
-            TokenExpiresAt = tokenResult.ExpiresAtUtc
-        };
+        User user;
 
-        _dbContext.Users.Add(user);
+        if (request.UserId.HasValue)
+        {
+            var existingUser = await _dbContext.Users.FirstOrDefaultAsync(u => u.Id == request.UserId.Value);
+            if (existingUser is null)
+                return BadRequest(new { error = "User not found" });
+            user = existingUser;
+        }
+        else
+        {
+            user = new User
+            {
+                Id = Guid.NewGuid(),
+                FirstName = request.FirstName,
+                LastName = request.LastName,
+            };
+            _dbContext.Users.Add(user);
+        }
+
+        // Upsert EmailConnection by (UserId, SubjectId)
+        var existingConnection = await _dbContext.EmailConnections
+            .FirstOrDefaultAsync(ec => ec.UserId == user.Id && ec.SubjectId == tokenResult.SubjectId);
+
+        EmailConnection connection;
+
+        if (existingConnection is not null)
+        {
+            existingConnection.RefreshToken = tokenResult.RefreshToken;
+            existingConnection.GrantedScopes = tokenResult.GrantedScopes;
+            existingConnection.Email = tokenResult.Email;
+            existingConnection.Status = EmailConnectionStatus.Active;
+            connection = existingConnection;
+        }
+        else
+        {
+            connection = new EmailConnection
+            {
+                Id = Guid.NewGuid(),
+                UserId = user.Id,
+                Email = tokenResult.Email,
+                SubjectId = tokenResult.SubjectId,
+                RefreshToken = tokenResult.RefreshToken,
+                GrantedScopes = tokenResult.GrantedScopes,
+                Status = EmailConnectionStatus.Active
+            };
+            _dbContext.EmailConnections.Add(connection);
+        }
+
         await _dbContext.SaveChangesAsync();
 
-        return Ok(new { userId = user.Id });
+        return Ok(new
+        {
+            userId = user.Id,
+            emailConnectionId = connection.Id,
+            status = connection.Status.ToString().ToLowerInvariant()
+        });
     }
 }

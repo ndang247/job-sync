@@ -8,6 +8,7 @@ public class AppDbContext : DbContext
     public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
 
     public DbSet<User> Users => Set<User>();
+    public DbSet<EmailConnection> EmailConnections => Set<EmailConnection>();
     public DbSet<SyncJob> SyncJobs => Set<SyncJob>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
