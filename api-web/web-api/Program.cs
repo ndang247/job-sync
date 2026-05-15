@@ -20,6 +20,7 @@ builder.Services.AddScoped<IGeminiService, GeminiService>();
 builder.Services.AddScoped<ISyncOrchestrator, SyncOrchestrator>();
 builder.Services.AddScoped<ISyncProgressReporter, SyncProgressReporter>();
 builder.Services.AddScoped<ISyncHubNotifier, SyncHubNotifier>();
+builder.Services.AddSingleton<ISyncJobChannel, SyncJobChannel>();
 builder.Services.AddHostedService<SyncBackgroundService>();
 
 builder.Services.AddCors(options =>

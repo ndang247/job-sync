@@ -12,73 +12,99 @@ namespace worker;
 public class SyncBackgroundService : BackgroundService
 {
     // BackgroundService is a singleton, so we can't inject scoped services (e.g. AppDbContext) directly.
-    // IServiceScopeFactory lets us create a new DI scope per polling cycle, ensuring scoped services
-    // get fresh instances and are properly disposed after each iteration.
+    // IServiceScopeFactory lets us create a new DI scope per job, ensuring each job gets its own
+    // DbContext and services that are properly disposed after completion.
     private readonly IServiceScopeFactory _scopeFactory;
+    private readonly ISyncJobChannel _channel;
     private readonly ILogger<SyncBackgroundService> _logger;
-    private static readonly TimeSpan PollingInterval = TimeSpan.FromSeconds(5);
 
-    public SyncBackgroundService(IServiceScopeFactory scopeFactory, ILogger<SyncBackgroundService> logger)
+    public SyncBackgroundService(
+        IServiceScopeFactory scopeFactory,
+        ISyncJobChannel channel,
+        ILogger<SyncBackgroundService> logger)
     {
         _scopeFactory = scopeFactory;
+        _channel = channel;
         _logger = logger;
     }
 
-    // Poll loop: checks for pending jobs, then sleeps for PollingInterval before checking again.
-    // Task.Delay accepts stoppingToken so the delay is cancelled immediately on shutdown.
-    //
-    // Trade-offs:
-    //   - Simple and reliable, but introduces up to 5s latency before a new job is picked up.
-    //   - Executes a DB query every 5s even when there's no work (wasted I/O under idle load).
-    //
-    // Alternatives for improvement:
-    //   - Event-driven: use a message queue (e.g. RabbitMQ, Azure Service Bus) or Postgres LISTEN/NOTIFY
-    //     so the worker reacts instantly to new jobs with zero idle queries.
-    //   - Hybrid: use a signaling mechanism (e.g. SemaphoreSlim, Channel<T>) triggered by the API
-    //     when a job is created, with a fallback poll as a safety net.
+    // Event-driven: reads job IDs from the channel as soon as the API writes them.
+    // Each job is processed concurrently in its own Task with its own DI scope,
+    // so multiple users syncing simultaneously are handled in parallel.
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        while (!stoppingToken.IsCancellationRequested)
+        await RecoverOrphanedJobsAsync(stoppingToken);
+
+        await foreach (var jobId in _channel.ReadAllAsync(stoppingToken))
         {
-            await ProcessPendingJobsAsync(stoppingToken);
-            await Task.Delay(PollingInterval, stoppingToken);
+            _ = ProcessJobAsync(jobId, stoppingToken);
         }
     }
 
-    public async Task ProcessPendingJobsAsync(CancellationToken cancellationToken)
+    private async Task RecoverOrphanedJobsAsync(CancellationToken cancellationToken)
     {
         using var scope = _scopeFactory.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        var orchestrator = scope.ServiceProvider.GetRequiredService<ISyncOrchestrator>();
-        var progressReporter = scope.ServiceProvider.GetRequiredService<ISyncProgressReporter>();
 
-        var pendingJobs = await dbContext.SyncJobs
-            .Where(j => j.Status == SyncJobStatus.Pending)
+        var orphanedIds = await dbContext.SyncJobs
+            .Where(j => j.Status == SyncJobStatus.Pending || j.Status == SyncJobStatus.Processing)
+            .Select(j => j.Id)
             .ToListAsync(cancellationToken);
 
-        foreach (var job in pendingJobs)
+        foreach (var id in orphanedIds)
         {
+            _logger.LogInformation("Recovering orphaned job {JobId}", id);
+            await _channel.WriteAsync(id, cancellationToken);
+        }
+    }
+
+    private async Task ProcessJobAsync(Guid jobId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var orchestrator = scope.ServiceProvider.GetRequiredService<ISyncOrchestrator>();
+            var progressReporter = scope.ServiceProvider.GetRequiredService<ISyncProgressReporter>();
+
+            var job = await dbContext.SyncJobs.FirstOrDefaultAsync(j => j.Id == jobId, cancellationToken);
+            if (job is null || job.Status != SyncJobStatus.Pending)
+                return;
+
+            job.Status = SyncJobStatus.Processing;
+            await dbContext.SaveChangesAsync(cancellationToken);
+
+            var results = await orchestrator.ExecuteSyncAsync(job.Id, job.UserId, progressReporter, cancellationToken);
+
+            job.Result = JsonSerializer.SerializeToDocument(results);
+            job.Status = SyncJobStatus.Completed;
+            await dbContext.SaveChangesAsync(cancellationToken);
+
+            await progressReporter.ReportCompletedAsync(job.Id, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Sync job {JobId} failed", jobId);
+
             try
             {
-                job.Status = SyncJobStatus.Processing;
-                await dbContext.SaveChangesAsync(cancellationToken);
+                using var scope = _scopeFactory.CreateScope();
+                var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                var progressReporter = scope.ServiceProvider.GetRequiredService<ISyncProgressReporter>();
 
-                var results = await orchestrator.ExecuteSyncAsync(job.Id, job.UserId, progressReporter, cancellationToken);
+                var job = await dbContext.SyncJobs.FirstOrDefaultAsync(j => j.Id == jobId, cancellationToken);
+                if (job is not null)
+                {
+                    job.Status = SyncJobStatus.Failed;
+                    job.Error = ex.Message;
+                    await dbContext.SaveChangesAsync(cancellationToken);
+                }
 
-                job.Result = JsonSerializer.SerializeToDocument(results);
-                job.Status = SyncJobStatus.Completed;
-                await dbContext.SaveChangesAsync(cancellationToken);
-
-                await progressReporter.ReportCompletedAsync(job.Id, cancellationToken);
+                await progressReporter.ReportFailedAsync(jobId, ex.Message, cancellationToken);
             }
-            catch (Exception ex)
+            catch (Exception innerEx)
             {
-                _logger.LogError(ex, "Sync job {JobId} failed", job.Id);
-                job.Status = SyncJobStatus.Failed;
-                job.Error = ex.Message;
-                await dbContext.SaveChangesAsync(cancellationToken);
-
-                await progressReporter.ReportFailedAsync(job.Id, ex.Message, cancellationToken);
+                _logger.LogError(innerEx, "Failed to update error status for job {JobId}", jobId);
             }
         }
     }

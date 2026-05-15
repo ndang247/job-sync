@@ -46,7 +46,8 @@ api-web/
 │   │   ├── IGeminiService.cs
 │   │   ├── ISyncOrchestrator.cs
 │   │   ├── ISyncProgressReporter.cs
-│   │   └── ISyncHubNotifier.cs
+│   │   ├── ISyncHubNotifier.cs
+│   │   └── ISyncJobChannel.cs
 │   └── core.csproj
 ├── infrastructure/
 │   ├── Data/
@@ -62,7 +63,8 @@ api-web/
 │   │   ├── GmailService.cs
 │   │   ├── GeminiService.cs
 │   │   ├── SyncOrchestrator.cs
-│   │   └── SyncProgressReporter.cs
+│   │   ├── SyncProgressReporter.cs
+│   │   └── SyncJobChannel.cs
 │   └── infrastructure.csproj
 └── worker/
     ├── SyncBackgroundService.cs
@@ -201,9 +203,10 @@ git commit -m "feat: wire up PostgreSQL with EF Core and user secrets"
 
 ## Task 6: Gmail Service ✅ COMPLETED
 
-> Implemented with OAuth token refresh, email fetching (last 30 days), MIME parsing.
+> Implemented with OAuth token refresh, email fetching (last 30 days), MIME parsing,
+> and full pagination via `NextPageToken` loop.
 > Packages added: `Google.Apis.Gmail.v1 1.74.0.4134` (to infrastructure).
-> Tests not yet created.
+> ApplicationName = "Job-Sync". Tests not yet created.
 
 **Files:**
 
@@ -288,7 +291,7 @@ public class GmailService : IGmailService
         using var gmailService = new Google.Apis.Gmail.v1.GmailService(new BaseClientService.Initializer
         {
             HttpClientInitializer = credential,
-            ApplicationName = "JobSync"
+            ApplicationName = "Job-Sync"
         });
 
         var after = DateTimeOffset.UtcNow.AddDays(-30).ToUnixTimeSeconds();
@@ -297,21 +300,29 @@ public class GmailService : IGmailService
         request.MaxResults = 500;
 
         var emails = new List<EmailMessage>();
-        var response = await request.ExecuteAsync(cancellationToken);
+        string? pageToken = null;
 
-        if (response.Messages == null)
-            return emails;
-
-        foreach (var msgRef in response.Messages)
+        do
         {
-            var msg = await gmailService.Users.Messages.Get("me", msgRef.Id).ExecuteAsync(cancellationToken);
-            emails.Add(ParseMessage(msg));
-        }
+            request.PageToken = pageToken;
+            var response = await request.ExecuteAsync(cancellationToken);
+
+            if (response.Messages != null)
+            {
+                foreach (var msgRef in response.Messages)
+                {
+                    var msg = await gmailService.Users.Messages.Get("me", msgRef.Id).ExecuteAsync(cancellationToken);
+                    emails.Add(ParseMessage(msg));
+                }
+            }
+
+            pageToken = response.NextPageToken;
+        } while (!string.IsNullOrEmpty(pageToken));
 
         return emails;
     }
 
-    private async Task<UserCredential> GetCredentialAsync(Core.Entities.User user, CancellationToken cancellationToken)
+    private async Task<UserCredential> GetCredentialAsync(core.Entities.User user, CancellationToken cancellationToken)
     {
         var flow = new GoogleAuthorizationCodeFlow(new GoogleAuthorizationCodeFlow.Initializer
         {
@@ -549,8 +560,8 @@ public class GeminiService : IGeminiService
     private GenerativeModel CreateModel()
     {
         var apiKey = _configuration["Google:GeminiApiKey"]!;
-        var genAi = new GoogleGenAi(apiKey);
-        return genAi.CreateGenerativeModel(GoogleGenAiModels.Gemini2Flash);
+        var genAi = new GoogleAi(apiKey);
+        return genAi.CreateGenerativeModel(GoogleAIModels.Gemini2Flash);
     }
 
     private static List<JobApplication> ParseResponse(string responseText)
@@ -567,7 +578,7 @@ public class GeminiService : IGeminiService
         {
             return JsonSerializer.Deserialize<List<JobApplication>>(cleaned, new JsonSerializerOptions
             {
-                PropertyNameCamelCase = true
+                PropertyNamingPolicy = JsonNamingPolicy.CamelCase
             }) ?? new List<JobApplication>();
         }
         catch (JsonException)
@@ -623,14 +634,16 @@ public class SyncOrchestratorTests
     {
         var gmailService = Substitute.For<IGmailService>();
         var geminiService = Substitute.For<IGeminiService>();
+        var progressReporter = Substitute.For<ISyncProgressReporter>();
 
         gmailService.FetchEmailsAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
             .Returns(new List<EmailMessage>());
 
         var orchestrator = new SyncOrchestrator(gmailService, geminiService);
+        var jobId = Guid.NewGuid();
         var userId = Guid.NewGuid();
 
-        var result = await orchestrator.ExecuteSyncAsync(userId);
+        var result = await orchestrator.ExecuteSyncAsync(jobId, userId, progressReporter);
 
         Assert.Empty(result);
     }
@@ -640,6 +653,7 @@ public class SyncOrchestratorTests
     {
         var gmailService = Substitute.For<IGmailService>();
         var geminiService = Substitute.For<IGeminiService>();
+        var progressReporter = Substitute.For<ISyncProgressReporter>();
 
         // 25 emails = 2 batches (20 + 5)
         var emails = Enumerable.Range(1, 25)
@@ -651,7 +665,7 @@ public class SyncOrchestratorTests
 
         var batchResult = new List<JobApplication>
         {
-            new() { CompanyName = "Company A", JobRole = "Dev", AppliedDate = "2026-04-01", Status = "applied" }
+            new() { CompanyName = "Company A", JobRole = "Dev", AppliedDate = "01-04-2026", Status = "applied" }
         };
 
         geminiService.ClassifyBatchAsync(Arg.Any<List<EmailMessage>>(), Arg.Any<CancellationToken>())
@@ -662,7 +676,7 @@ public class SyncOrchestratorTests
 
         var orchestrator = new SyncOrchestrator(gmailService, geminiService);
 
-        var result = await orchestrator.ExecuteSyncAsync(Guid.NewGuid());
+        var result = await orchestrator.ExecuteSyncAsync(Guid.NewGuid(), Guid.NewGuid(), progressReporter);
 
         Assert.Single(result);
         Assert.Equal("Company A", result[0].CompanyName);
@@ -747,94 +761,59 @@ git commit -m "feat: implement sync orchestrator with batching and deduplication
 
 ---
 
-## Task 9: Background Worker ✅ COMPLETED
+## Task 9: SyncJobChannel & Background Worker ✅ COMPLETED
 
-> Implemented with polling loop, scoped DI, progress reporting, and error handling.
-> Final implementation done as part of Task 16 (with SignalR progress).
+> **Previous:** Polling loop with sequential processing. **New:** Event-driven Channel<T> with concurrent per-job Tasks.
+> ISyncJobChannel interface in core, SyncJobChannel implementation in infrastructure.
+> SyncBackgroundService reads from channel, spawns a Task per job with its own DI scope.
+> On startup, recovers orphaned Pending/Processing jobs from DB.
 
 **Files:**
 
-- Created: `worker/SyncBackgroundService.cs`
-- Create: `tests/worker.tests/SyncBackgroundServiceTests.cs`
+- Created: `core/Interfaces/ISyncJobChannel.cs`
+- Created: `infrastructure/Services/SyncJobChannel.cs`
+- Rewritten: `worker/SyncBackgroundService.cs`
 
-- [ ] **Step 1: Write failing test**
+- [x] **Step 1: Create ISyncJobChannel interface**
 
 ```csharp
-// tests/worker.tests/SyncBackgroundServiceTests.cs
-using System.Text.Json;
-using core.Entities;
-using core.Enums;
-using core.Interfaces;
-using core.Models;
-using infrastructure.Data;
-using worker;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
-using NSubstitute;
+// core/Interfaces/ISyncJobChannel.cs
+namespace core.Interfaces;
 
-namespace worker.Tests;
-
-public class SyncBackgroundServiceTests
+public interface ISyncJobChannel
 {
-    [Fact]
-    public async Task ProcessesPendingJob_SetsCompleted()
-    {
-        var options = new DbContextOptionsBuilder<AppDbContext>()
-            .UseInMemoryDatabase(Guid.NewGuid().ToString())
-            .Options;
-
-        using var context = new AppDbContext(options);
-
-        var user = new User { Id = Guid.NewGuid(), FirstName = "Test", LastName = "User", AccessToken = "a", RefreshToken = "r", TokenExpiresAt = DateTime.UtcNow.AddHours(1) };
-        context.Users.Add(user);
-
-        var job = new SyncJob { Id = Guid.NewGuid(), UserId = user.Id, Status = SyncJobStatus.Pending };
-        context.SyncJobs.Add(job);
-        await context.SaveChangesAsync();
-
-        var orchestrator = Substitute.For<ISyncOrchestrator>();
-        orchestrator.ExecuteSyncAsync(user.Id, Arg.Any<CancellationToken>())
-            .Returns(new List<JobApplication>
-            {
-                new() { CompanyName = "TestCo", JobRole = "Dev", AppliedDate = "2026-04-01", Status = "applied" }
-            });
-
-        var serviceProvider = Substitute.For<IServiceProvider>();
-        var scope = Substitute.For<IServiceScope>();
-        var scopeFactory = Substitute.For<IServiceScopeFactory>();
-        scopeFactory.CreateScope().Returns(scope);
-        scope.ServiceProvider.Returns(serviceProvider);
-        serviceProvider.GetService(typeof(IServiceScopeFactory)).Returns(scopeFactory);
-        serviceProvider.GetService(typeof(AppDbContext)).Returns(context);
-        serviceProvider.GetService(typeof(ISyncOrchestrator)).Returns(orchestrator);
-
-        var logger = Substitute.For<ILogger<SyncBackgroundService>>();
-        var worker = new SyncBackgroundService(scopeFactory, logger);
-
-        await worker.ProcessPendingJobsAsync(CancellationToken.None);
-
-        var updated = await context.SyncJobs.FindAsync(job.Id);
-        Assert.Equal(SyncJobStatus.Completed, updated!.Status);
-        Assert.NotNull(updated.Result);
-    }
+    ValueTask WriteAsync(Guid jobId, CancellationToken cancellationToken = default);
+    IAsyncEnumerable<Guid> ReadAllAsync(CancellationToken cancellationToken = default);
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Create SyncJobChannel implementation**
 
-```bash
-dotnet test tests/worker.Tests --filter "SyncBackgroundServiceTests"
+```csharp
+// infrastructure/Services/SyncJobChannel.cs
+using System.Threading.Channels;
+using core.Interfaces;
+
+namespace infrastructure.Services;
+
+public class SyncJobChannel : ISyncJobChannel
+{
+    private readonly Channel<Guid> _channel = Channel.CreateUnbounded<Guid>(
+        new UnboundedChannelOptions { SingleReader = false, SingleWriter = false });
+
+    public ValueTask WriteAsync(Guid jobId, CancellationToken cancellationToken = default)
+        => _channel.Writer.WriteAsync(jobId, cancellationToken);
+
+    public IAsyncEnumerable<Guid> ReadAllAsync(CancellationToken cancellationToken = default)
+        => _channel.Reader.ReadAllAsync(cancellationToken);
+}
 ```
 
-Expected: FAIL — `SyncBackgroundService` not found.
-
-- [ ] **Step 3: Implement SyncBackgroundService**
+- [x] **Step 3: Implement SyncBackgroundService with channel + concurrent processing**
 
 ```csharp
 // worker/SyncBackgroundService.cs
 using System.Text.Json;
-using core.Entities;
 using core.Enums;
 using core.Interfaces;
 using infrastructure.Data;
@@ -848,72 +827,112 @@ namespace worker;
 public class SyncBackgroundService : BackgroundService
 {
     private readonly IServiceScopeFactory _scopeFactory;
+    private readonly ISyncJobChannel _channel;
     private readonly ILogger<SyncBackgroundService> _logger;
-    private static readonly TimeSpan PollingInterval = TimeSpan.FromSeconds(5);
 
-    public SyncBackgroundService(IServiceScopeFactory scopeFactory, ILogger<SyncBackgroundService> logger)
+    public SyncBackgroundService(
+        IServiceScopeFactory scopeFactory,
+        ISyncJobChannel channel,
+        ILogger<SyncBackgroundService> logger)
     {
         _scopeFactory = scopeFactory;
+        _channel = channel;
         _logger = logger;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        while (!stoppingToken.IsCancellationRequested)
+        await RecoverOrphanedJobsAsync(stoppingToken);
+
+        await foreach (var jobId in _channel.ReadAllAsync(stoppingToken))
         {
-            await ProcessPendingJobsAsync(stoppingToken);
-            await Task.Delay(PollingInterval, stoppingToken);
+            _ = ProcessJobAsync(jobId, stoppingToken);
         }
     }
 
-    public async Task ProcessPendingJobsAsync(CancellationToken cancellationToken)
+    private async Task RecoverOrphanedJobsAsync(CancellationToken cancellationToken)
     {
         using var scope = _scopeFactory.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        var orchestrator = scope.ServiceProvider.GetRequiredService<ISyncOrchestrator>();
 
-        var pendingJobs = await dbContext.SyncJobs
-            .Where(j => j.Status == SyncJobStatus.Pending)
+        var orphanedIds = await dbContext.SyncJobs
+            .Where(j => j.Status == SyncJobStatus.Pending || j.Status == SyncJobStatus.Processing)
+            .Select(j => j.Id)
             .ToListAsync(cancellationToken);
 
-        foreach (var job in pendingJobs)
+        foreach (var id in orphanedIds)
         {
+            _logger.LogInformation("Recovering orphaned job {JobId}", id);
+            await _channel.WriteAsync(id, cancellationToken);
+        }
+    }
+
+    private async Task ProcessJobAsync(Guid jobId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var orchestrator = scope.ServiceProvider.GetRequiredService<ISyncOrchestrator>();
+            var progressReporter = scope.ServiceProvider.GetRequiredService<ISyncProgressReporter>();
+
+            var job = await dbContext.SyncJobs.FirstOrDefaultAsync(j => j.Id == jobId, cancellationToken);
+            if (job is null || job.Status != SyncJobStatus.Pending)
+                return;
+
+            job.Status = SyncJobStatus.Processing;
+            await dbContext.SaveChangesAsync(cancellationToken);
+
+            var results = await orchestrator.ExecuteSyncAsync(job.Id, job.UserId, progressReporter, cancellationToken);
+
+            job.Result = JsonSerializer.SerializeToDocument(results);
+            job.Status = SyncJobStatus.Completed;
+            await dbContext.SaveChangesAsync(cancellationToken);
+
+            await progressReporter.ReportCompletedAsync(job.Id, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Sync job {JobId} failed", jobId);
+
             try
             {
-                job.Status = SyncJobStatus.Processing;
-                await dbContext.SaveChangesAsync(cancellationToken);
+                using var scope = _scopeFactory.CreateScope();
+                var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                var progressReporter = scope.ServiceProvider.GetRequiredService<ISyncProgressReporter>();
 
-                var results = await orchestrator.ExecuteSyncAsync(job.UserId, cancellationToken);
+                var job = await dbContext.SyncJobs.FirstOrDefaultAsync(j => j.Id == jobId, cancellationToken);
+                if (job is not null)
+                {
+                    job.Status = SyncJobStatus.Failed;
+                    job.Error = ex.Message;
+                    await dbContext.SaveChangesAsync(cancellationToken);
+                }
 
-                job.Result = JsonSerializer.SerializeToDocument(results);
-                job.Status = SyncJobStatus.Completed;
+                await progressReporter.ReportFailedAsync(jobId, ex.Message, cancellationToken);
             }
-            catch (Exception ex)
+            catch (Exception innerEx)
             {
-                _logger.LogError(ex, "Sync job {JobId} failed", job.Id);
-                job.Status = SyncJobStatus.Failed;
-                job.Error = ex.Message;
+                _logger.LogError(innerEx, "Failed to update error status for job {JobId}", jobId);
             }
-
-            await dbContext.SaveChangesAsync(cancellationToken);
         }
     }
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Verify build**
 
 ```bash
-dotnet test tests/worker.Tests --filter "SyncBackgroundServiceTests"
+dotnet build
 ```
 
-Expected: PASS.
+Expected: Build succeeded.
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add -A
-git commit -m "feat: implement background worker for async sync job processing"
+git commit -m "feat: implement channel-based concurrent background worker"
 ```
 
 ---
@@ -938,7 +957,7 @@ git commit -m "feat: implement background worker for async sync job processing"
 - [ ] **Step 1: Write failing test**
 
 ```csharp
-// tests/web-api.tests/Controllers/AuthControllerTests.cs
+// tests/web-api.tests/Controllers/MailConnectControllerTests.cs
 using web_api.Controllers;
 using infrastructure.Data;
 using Microsoft.AspNetCore.Mvc;
@@ -948,7 +967,7 @@ using NSubstitute;
 
 namespace web_api.Tests.Controllers;
 
-public class AuthControllerTests
+public class MailConnectControllerTests
 {
     [Fact]
     public void GetGmailUrl_ReturnsOkWithUrl()
@@ -962,7 +981,7 @@ public class AuthControllerTests
             .Options;
         using var context = new AppDbContext(options);
 
-        var controller = new AuthController(context, config);
+        var controller = new MailConnectController(context, config);
 
         var result = controller.GetGmailUrl();
 
@@ -971,7 +990,7 @@ public class AuthControllerTests
     }
 
     [Fact]
-    public async Task Connect_CreatesUser_ReturnsUserId()
+    public async Task GmailConnect_CreatesUser_ReturnsUserId()
     {
         var config = Substitute.For<IConfiguration>();
         config["Google:ClientId"].Returns("test-client-id");
@@ -983,7 +1002,7 @@ public class AuthControllerTests
             .Options;
         using var context = new AppDbContext(options);
 
-        var controller = new AuthController(context, config);
+        var controller = new MailConnectController(context, config);
 
         // Note: Cannot fully integration-test OAuth exchange without mocking Google
         // This test verifies controller instantiation and route setup
@@ -995,41 +1014,39 @@ public class AuthControllerTests
 - [ ] **Step 2: Run test to verify it fails**
 
 ```bash
-dotnet test tests/web_api.Tests --filter "AuthControllerTests"
+dotnet test tests/web_api.Tests --filter "MailConnectControllerTests"
 ```
 
-Expected: FAIL — `AuthController` not found.
+Expected: FAIL — `MailConnectController` not found.
 
-- [ ] **Step 3: Implement AuthController**
+- [ ] **Step 3: Implement MailConnectController**
 
 ```csharp
-// web-api/Controllers/AuthController.cs
+// web-api/Controllers/MailConnectController.cs
 using Google.Apis.Auth.OAuth2;
 using Google.Apis.Auth.OAuth2.Flows;
-using Google.Apis.Auth.OAuth2.Responses;
 using Google.Apis.Gmail.v1;
 using core.Entities;
 using infrastructure.Data;
+using api_contracts.Requests;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Configuration;
 
 namespace web_api.Controllers;
 
 [ApiController]
-[Route("api/auth/gmail")]
-public class AuthController : ControllerBase
+[Route("api/mail-connect")]
+public class MailConnectController : ControllerBase
 {
     private readonly AppDbContext _dbContext;
     private readonly IConfiguration _configuration;
 
-    public AuthController(AppDbContext dbContext, IConfiguration configuration)
+    public MailConnectController(AppDbContext dbContext, IConfiguration configuration)
     {
         _dbContext = dbContext;
         _configuration = configuration;
     }
 
-    [HttpGet("url")]
+    [HttpGet("gmail/url")]
     public IActionResult GetGmailUrl()
     {
         var clientId = _configuration["Google:ClientId"]!;
@@ -1046,8 +1063,8 @@ public class AuthController : ControllerBase
         return Ok(new { url });
     }
 
-    [HttpPost("connect")]
-    public async Task<IActionResult> Connect([FromBody] ConnectRequest request)
+    [HttpPost("gmail/connect")]
+    public async Task<IActionResult> GmailConnect([FromBody] GmailConnectRequest request)
     {
         var flow = new GoogleAuthorizationCodeFlow(new GoogleAuthorizationCodeFlow.Initializer
         {
@@ -1056,7 +1073,7 @@ public class AuthController : ControllerBase
                 ClientId = _configuration["Google:ClientId"]!,
                 ClientSecret = _configuration["Google:ClientSecret"]!
             },
-            Scopes = new[] { GmailService.Scope.GmailReadonly }
+            Scopes = [GmailService.Scope.GmailReadonly]
         });
 
         var tokenResponse = await flow.ExchangeCodeForTokenAsync(
@@ -1081,19 +1098,12 @@ public class AuthController : ControllerBase
         return Ok(new { userId = user.Id });
     }
 }
-
-public class ConnectRequest
-{
-    public string Code { get; set; } = string.Empty;
-    public string FirstName { get; set; } = string.Empty;
-    public string LastName { get; set; } = string.Empty;
-}
 ```
 
 - [ ] **Step 4: Run test to verify it passes**
 
 ```bash
-dotnet test tests/web_api.Tests --filter "AuthControllerTests"
+dotnet test tests/web_api.Tests --filter "MailConnectControllerTests"
 ```
 
 Expected: PASS.
@@ -1102,22 +1112,20 @@ Expected: PASS.
 
 ```bash
 git add -A
-git commit -m "feat: implement auth controller with Gmail OAuth connect"
+git commit -m "feat: implement mail connect controller with Gmail OAuth connect"
 ```
 
 ---
 
 ## Task 11: Sync Controller ✅ COMPLETED
 
-> Implemented with `POST api/sync` (creates pending job) and `GET api/sync/{jobId}` (returns status/progress/stage/result/error).
+> **Previous:** Creates pending job and returns jobId. **New:** Also rejects duplicate jobs (409 Conflict) and writes jobId to SyncJobChannel for immediate processing.
 > `StartSyncRequest` DTO lives in `api-contracts/Requests/`.
 > GetStatus response already includes `progress` and `stage` fields (Task 18 scope covered here).
 
 **Files:**
 
-- Created: `web-api/Controllers/SyncController.cs`
-- Created: `api-contracts/Requests/StartSyncRequest.cs`
-- Tests not yet created
+- Modified: `web-api/Controllers/SyncController.cs`
 
 - [ ] **Step 1: Write failing test**
 
@@ -1212,12 +1220,14 @@ dotnet test tests/web_api.Tests --filter "SyncControllerTests"
 
 Expected: FAIL — `SyncController` not found.
 
-- [ ] **Step 3: Implement SyncController**
+- [x] **Step 3: Update SyncController with 409 Conflict + channel write**
 
 ```csharp
 // web-api/Controllers/SyncController.cs
+using api_contracts.Requests;
 using core.Entities;
 using core.Enums;
+using core.Interfaces;
 using infrastructure.Data;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -1229,10 +1239,12 @@ namespace web_api.Controllers;
 public class SyncController : ControllerBase
 {
     private readonly AppDbContext _dbContext;
+    private readonly ISyncJobChannel _syncJobChannel;
 
-    public SyncController(AppDbContext dbContext)
+    public SyncController(AppDbContext dbContext, ISyncJobChannel syncJobChannel)
     {
         _dbContext = dbContext;
+        _syncJobChannel = syncJobChannel;
     }
 
     [HttpPost]
@@ -1241,6 +1253,12 @@ public class SyncController : ControllerBase
         var userExists = await _dbContext.Users.AnyAsync(u => u.Id == request.UserId);
         if (!userExists)
             return BadRequest(new { error = "User not found" });
+
+        var hasActiveJob = await _dbContext.SyncJobs.AnyAsync(j =>
+            j.UserId == request.UserId &&
+            (j.Status == SyncJobStatus.Pending || j.Status == SyncJobStatus.Processing));
+        if (hasActiveJob)
+            return Conflict(new { error = "A sync job is already in progress for this user" });
 
         var job = new SyncJob
         {
@@ -1252,45 +1270,44 @@ public class SyncController : ControllerBase
         _dbContext.SyncJobs.Add(job);
         await _dbContext.SaveChangesAsync();
 
+        await _syncJobChannel.WriteAsync(job.Id);
+
         return Ok(new { jobId = job.Id });
     }
 
-    [HttpGet("{jobId:guid}")]
+    [HttpGet("status/{jobId:guid}")]
     public async Task<IActionResult> GetStatus(Guid jobId)
     {
         var job = await _dbContext.SyncJobs.FirstOrDefaultAsync(j => j.Id == jobId);
-        if (job == null)
+        if (job is null)
             return NotFound();
 
         return Ok(new
         {
             jobId = job.Id,
             status = job.Status.ToString().ToLowerInvariant(),
+            progress = job.Progress,
+            stage = job.Stage,
             result = job.Result,
             error = job.Error
         });
     }
 }
-
-public class StartSyncRequest
-{
-    public Guid UserId { get; set; }
-}
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Verify build**
 
 ```bash
-dotnet test tests/web_api.Tests --filter "SyncControllerTests"
+dotnet build
 ```
 
-Expected: PASS.
+Expected: Build succeeded.
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add -A
-git commit -m "feat: implement sync controller with start and polling endpoints"
+git commit -m "feat: add 409 conflict check and channel dispatch to sync controller"
 ```
 
 ---
@@ -1742,103 +1759,10 @@ git commit -m "feat: add progress reporting to sync orchestrator"
 
 ---
 
-## Task 16: Update Background Worker with SignalR ✅ COMPLETED
+## Task 16: ~~Update Background Worker with SignalR~~ SUPERSEDED
 
-**Files:**
-
-- Modify: `worker/SyncBackgroundService.cs`
-
-- [ ] **Step 1: Update SyncBackgroundService to use progress reporter**
-
-```csharp
-// worker/SyncBackgroundService.cs
-using System.Text.Json;
-using core.Entities;
-using core.Enums;
-using core.Interfaces;
-using infrastructure.Data;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
-
-namespace worker;
-
-public class SyncBackgroundService : BackgroundService
-{
-    private readonly IServiceScopeFactory _scopeFactory;
-    private readonly ILogger<SyncBackgroundService> _logger;
-    private static readonly TimeSpan PollingInterval = TimeSpan.FromSeconds(5);
-
-    public SyncBackgroundService(IServiceScopeFactory scopeFactory, ILogger<SyncBackgroundService> logger)
-    {
-        _scopeFactory = scopeFactory;
-        _logger = logger;
-    }
-
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
-    {
-        while (!stoppingToken.IsCancellationRequested)
-        {
-            await ProcessPendingJobsAsync(stoppingToken);
-            await Task.Delay(PollingInterval, stoppingToken);
-        }
-    }
-
-    public async Task ProcessPendingJobsAsync(CancellationToken cancellationToken)
-    {
-        using var scope = _scopeFactory.CreateScope();
-        var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        var orchestrator = scope.ServiceProvider.GetRequiredService<ISyncOrchestrator>();
-        var progressReporter = scope.ServiceProvider.GetRequiredService<ISyncProgressReporter>();
-
-        var pendingJobs = await dbContext.SyncJobs
-            .Where(j => j.Status == SyncJobStatus.Pending)
-            .ToListAsync(cancellationToken);
-
-        foreach (var job in pendingJobs)
-        {
-            try
-            {
-                job.Status = SyncJobStatus.Processing;
-                await dbContext.SaveChangesAsync(cancellationToken);
-
-                var results = await orchestrator.ExecuteSyncAsync(job.Id, job.UserId, progressReporter, cancellationToken);
-
-                job.Result = JsonSerializer.SerializeToDocument(results);
-                job.Status = SyncJobStatus.Completed;
-                await dbContext.SaveChangesAsync(cancellationToken);
-
-                await progressReporter.ReportCompletedAsync(job.Id, cancellationToken);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Sync job {JobId} failed", job.Id);
-                job.Status = SyncJobStatus.Failed;
-                job.Error = ex.Message;
-                await dbContext.SaveChangesAsync(cancellationToken);
-
-                await progressReporter.ReportFailedAsync(job.Id, ex.Message, cancellationToken);
-            }
-        }
-    }
-}
-```
-
-- [ ] **Step 2: Verify build**
-
-```bash
-dotnet build
-```
-
-Expected: Build succeeded.
-
-- [ ] **Step 3: Commit**
-
-```bash
-git add -A
-git commit -m "feat: integrate SignalR progress reporting in background worker"
-```
+> Superseded by Task 9 rework. The new Channel<T>-based SyncBackgroundService already includes
+> progress reporting and SignalR integration via ISyncProgressReporter.
 
 ---
 
@@ -1857,6 +1781,7 @@ git commit -m "feat: integrate SignalR progress reporting in background worker"
 ```csharp
 // web-api/Program.cs
 using web_api.Hubs;
+using web_api.Services;
 using core.Interfaces;
 using infrastructure.Data;
 using infrastructure.Services;
@@ -1866,8 +1791,7 @@ using Microsoft.EntityFrameworkCore;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
-builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+builder.Services.AddOpenApi();
 builder.Services.AddSignalR();
 
 builder.Services.AddDbContext<AppDbContext>(options =>
@@ -1877,6 +1801,8 @@ builder.Services.AddScoped<IGmailService, GmailService>();
 builder.Services.AddScoped<IGeminiService, GeminiService>();
 builder.Services.AddScoped<ISyncOrchestrator, SyncOrchestrator>();
 builder.Services.AddScoped<ISyncProgressReporter, SyncProgressReporter>();
+builder.Services.AddScoped<ISyncHubNotifier, SyncHubNotifier>();
+builder.Services.AddSingleton<ISyncJobChannel, SyncJobChannel>();
 builder.Services.AddHostedService<SyncBackgroundService>();
 
 builder.Services.AddCors(options =>
@@ -1891,8 +1817,7 @@ var app = builder.Build();
 
 if (app.Environment.IsDevelopment())
 {
-    app.UseSwagger();
-    app.UseSwaggerUI();
+    app.MapOpenApi();
 }
 
 app.UseCors();
@@ -1919,9 +1844,9 @@ git commit -m "feat: register SignalR hub and progress reporter in DI"
 
 ---
 
-## Task 18: Update SyncController with Progress Fields ✅ COMPLETED
+## Task 18: ~~Update SyncController with Progress Fields~~ SUPERSEDED
 
-> Already included `stage` and `progress` (as `percent`) in the GetStatus response
+> Already included `stage` and `progress` in the GetStatus response
 > when SyncController was implemented in Task 11.
 
 **Files:**
@@ -1931,7 +1856,7 @@ git commit -m "feat: register SignalR hub and progress reporter in DI"
 - [ ] **Step 1: Update GetStatus to include stage and percent**
 
 ```csharp
-    [HttpGet("{jobId:guid}")]
+    [HttpGet("status/{jobId:guid}")]
     public async Task<IActionResult> GetStatus(Guid jobId)
     {
         var job = await _dbContext.SyncJobs.FirstOrDefaultAsync(j => j.Id == jobId);
@@ -1942,8 +1867,8 @@ git commit -m "feat: register SignalR hub and progress reporter in DI"
         {
             jobId = job.Id,
             status = job.Status.ToString().ToLowerInvariant(),
+            progress = job.Progress,
             stage = job.Stage,
-            percent = job.Progress,
             result = job.Result,
             error = job.Error
         });

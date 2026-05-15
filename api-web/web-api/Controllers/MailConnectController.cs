@@ -38,6 +38,8 @@ public class MailConnectController : ControllerBase
         return Ok(new { url });
     }
 
+    // TODO: Future iteration should support connecting multiple accounts of the same email domain
+    // (e.g. multiple Gmail accounts) belonging to a single authenticated user.
     [HttpPost("gmail/connect")]
     public async Task<IActionResult> GmailConnect([FromBody] GmailConnectRequest request)
     {

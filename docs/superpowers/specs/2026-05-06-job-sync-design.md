@@ -28,7 +28,7 @@ Job Sync tracks job applications by syncing from a user's Gmail inbox. Users con
 | RefreshToken   | text         | encrypted, provider-agnostic |
 | TokenExpiresAt | timestamp    |                              |
 | CreatedAt      | timestamp    |                              |
-| UpdatedAt      | timestamp    |                              |
+| UpdatedAt      | timestamp?   |                              |
 | DeletedAt      | timestamp?   | soft delete                  |
 
 ### SyncJobs
@@ -43,7 +43,7 @@ Job Sync tracks job applications by syncing from a user's Gmail inbox. Users con
 | Result    | jsonb        | array of job applications              |
 | Error     | text         | error message if failed                |
 | CreatedAt | timestamp    |                                        |
-| UpdatedAt | timestamp    |                                        |
+| UpdatedAt | timestamp?   |                                        |
 | DeletedAt | timestamp?   | soft delete                            |
 
 ### Result JSON Shape
@@ -70,10 +70,10 @@ Job Sync tracks job applications by syncing from a user's Gmail inbox. Users con
 
 ### Sync
 
-| Method | Endpoint            | Description                                              |
-| ------ | ------------------- | -------------------------------------------------------- |
-| POST   | `/api/sync`         | Start sync job (body: userId), return job ID immediately |
-| GET    | `/api/sync/{jobId}` | Poll job status + results when completed                 |
+| Method | Endpoint                   | Description                                              |
+| ------ | -------------------------- | -------------------------------------------------------- |
+| POST   | `/api/sync`                | Start sync job (body: userId), return job ID immediately |
+| GET    | `/api/sync/status/{jobId}` | Poll job status + results when completed                 |
 
 ## Architecture
 
@@ -85,19 +85,37 @@ Job Sync tracks job applications by syncing from a user's Gmail inbox. Users con
 - **Sync Orchestrator** — coordinates the pipeline (fetch → batch → process → merge → store result)
 - **Progress Reporter** — persists progress to DB + delegates to ISyncHubNotifier for SignalR push
 - **Hub Notifier** — sends SignalR events (SyncProgress, SyncCompleted, SyncFailed) via IHubContext
-- **Background Worker** — `BackgroundService` / `IHostedService`, picks up pending SyncJobs, runs orchestrator
+- **Sync Job Channel** — in-memory `Channel<Guid>` (singleton) connecting the API (producer) to the worker (consumer) for immediate job dispatch
+- **Background Worker** — `BackgroundService` / `IHostedService`, reads from SyncJobChannel, processes each job concurrently in its own Task with its own DI scope
+
+### Concurrency Constraints
+
+- One active sync job per user — API returns 409 Conflict if user already has a Pending/Processing job
+- No global concurrency limit — all users are served concurrently
+- On startup, worker recovers orphaned Pending/Processing jobs from DB and re-queues them via the channel
+- Worker runs in-process with the web API (Channel<T> is in-memory)
 
 ### Sync Pipeline Flow
 
 1. Client calls `POST /api/sync` with userId
-2. Controller creates SyncJob (status=pending), returns jobId
-3. Background worker picks up pending job, sets status=processing
-4. Gmail Service refreshes token if needed, fetches last 30 days of emails
-5. Sync Orchestrator batches emails (20 per batch)
-6. Each batch → Gemini Service: identify job applications, deduplicate within batch, return structured JSON
-7. After all batches complete, final merge pass → Gemini: deduplicate across all batch results
-8. Store final result JSON in SyncJob, set status=completed
-9. Client polls `GET /api/sync/{jobId}`, receives results when ready
+2. Controller checks for existing Pending/Processing job for this user → 409 Conflict if exists
+3. Controller creates SyncJob (status=pending), writes jobId to SyncJobChannel, returns jobId
+4. Background worker reads jobId from channel, spawns a new Task with its own DI scope
+5. Worker loads job from DB, sets status=processing
+6. Gmail Service refreshes token if needed, fetches last 30 days of emails
+7. Sync Orchestrator batches emails (20 per batch)
+8. Each batch → Gemini Service: identify job applications, deduplicate within batch, return structured JSON
+9. After all batches complete, final merge pass → Gemini: deduplicate across all batch results
+10. Store final result JSON in SyncJob, set status=completed
+11. Client receives results via SignalR events or polls `GET /api/sync/status/{jobId}`
+
+### Recommended Client Flow
+
+1. Client calls `POST /api/sync` → gets `jobId`, processing begins immediately
+2. Client connects to SignalR, calls `JoinJob(jobId)` — may miss first 1-2 progress events
+3. Client calls `GET /api/sync/status/{jobId}` once to catch up on current `stage`/`progress`
+4. Client receives remaining `SyncProgress` events in real-time
+5. On `SyncCompleted`, client calls `GET /api/sync/status/{jobId}` to fetch final results
 
 ### OAuth Connect Flow
 
@@ -120,8 +138,8 @@ Job Sync tracks job applications by syncing from a user's Gmail inbox. Users con
 ```
 api-web/
 ├── web-api/                  # REST controllers, Program.cs, DI config, SignalR hub, SyncHubNotifier
-├── core/                     # Domain entities, interfaces (incl. ISyncHubNotifier), models, enums
-├── infrastructure/           # Gmail service, Gemini service, EF Core DbContext, SyncOrchestrator, SyncProgressReporter
+├── core/                     # Domain entities, interfaces (incl. ISyncHubNotifier, ISyncJobChannel), models, enums
+├── infrastructure/           # Gmail service, Gemini service, EF Core DbContext, SyncOrchestrator, SyncProgressReporter, SyncJobChannel
 ├── worker/                   # SyncBackgroundService (BackgroundService)
 └── api-contracts/            # Request DTOs (GmailConnectRequest, StartSyncRequest)
 ```
@@ -167,17 +185,18 @@ Endpoint: `/hubs/sync`
 
 ### Flow
 
-1. Client connects to `/hubs/sync`
-2. Client calls `POST /api/sync` → gets jobId
-3. Client invokes `JoinJob(jobId)`
-4. Backend pushes `SyncProgress` events as processing happens
-5. Backend pushes `SyncCompleted` when done
-6. Client calls `GET /api/sync/{jobId}` to fetch results
-7. Client invokes `LeaveJob(jobId)` or disconnects
+1. Client calls `POST /api/sync` → gets `jobId`, processing begins immediately
+2. Client connects to `/hubs/sync`
+3. Client invokes `JoinJob(jobId)` — may miss first 1-2 progress events
+4. Client calls `GET /api/sync/status/{jobId}` once to catch up on current `stage`/`progress`
+5. Backend pushes remaining `SyncProgress` events in real-time
+6. Backend pushes `SyncCompleted` when done
+7. Client calls `GET /api/sync/status/{jobId}` to fetch final results
+8. Client invokes `LeaveJob(jobId)` or disconnects
 
 ### Fallback
 
-Polling endpoint `GET /api/sync/{jobId}` still works — response includes `stage` and `percent` fields for clients that can't use SignalR.
+Polling endpoint `GET /api/sync/status/{jobId}` still works — response includes `stage` and `progress` fields for clients that can’t use SignalR.
 
 ## Gemini Prompt Strategy
 
