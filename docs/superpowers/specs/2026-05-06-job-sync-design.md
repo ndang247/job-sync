@@ -14,7 +14,7 @@ Job Sync tracks job applications by syncing from Gmail inboxes. A user can conne
 - REST API with controllers, .NET 10
 - Frontend-agnostic API (React Native/Expo likely, but API works with any client)
 - Async processing with SignalR real-time progress (polling as fallback)
-- Email connection is upserted by `(UserId, SubjectId)`
+- Email connection is upserted by `SubjectId` (same Google account = same user, no duplicate users)
 - Sync request must include `emailConnectionId`
 - Access token is not persisted; minted from refresh token at sync time
 - On refresh token invalid/revoked/expired, mark connection `NeedsReconnect` and return reconnect-required errors
@@ -80,17 +80,17 @@ Job Sync tracks job applications by syncing from Gmail inboxes. A user can conne
 
 ### Mail Connect
 
-| Method | Endpoint                          | Description                                                     |
-| ------ | --------------------------------- | --------------------------------------------------------------- |
-| GET    | `/api/mail-connect/gmail/url`     | Return Gmail OAuth consent URL for client to redirect           |
-| POST   | `/api/mail-connect/gmail/connect` | Receive OAuth code, create/update user, upsert email connection |
+| Method | Endpoint                              | Description                                                           |
+| ------ | ------------------------------------- | --------------------------------------------------------------------- |
+| GET    | `/api/v1/mail-connect/gmail/start`    | Redirect user to Google OAuth consent screen                          |
+| GET    | `/api/v1/mail-connect/gmail/callback` | Receive OAuth code from Google, exchange tokens, redirect to frontend |
 
 ### Sync
 
-| Method | Endpoint                   | Description                                                                  |
-| ------ | -------------------------- | ---------------------------------------------------------------------------- |
-| POST   | `/api/sync`                | Start sync job (body: userId + emailConnectionId), return job ID immediately |
-| GET    | `/api/sync/status/{jobId}` | Poll job status + results when completed                                     |
+| Method | Endpoint                      | Description                                                                  |
+| ------ | ----------------------------- | ---------------------------------------------------------------------------- |
+| POST   | `/api/v1/sync`                | Start sync job (body: userId + emailConnectionId), return job ID immediately |
+| GET    | `/api/v1/sync/status/{jobId}` | Poll job status + results when completed                                     |
 
 ## Architecture
 
@@ -114,7 +114,7 @@ Job Sync tracks job applications by syncing from Gmail inboxes. A user can conne
 
 ### Sync Pipeline Flow
 
-1. Client calls `POST /api/sync` with `userId` + `emailConnectionId`
+1. Client calls `POST /api/v1/sync` with `userId` + `emailConnectionId`
 2. Controller validates user exists, connection exists, connection belongs to user, and connection status is `active`
 3. Controller checks for existing Pending/Processing job for this connection → 409 Conflict if exists
 4. Controller creates SyncJob (status=pending, includes `EmailConnectionId`), writes jobId to SyncJobChannel, returns jobId
@@ -126,27 +126,26 @@ Job Sync tracks job applications by syncing from Gmail inboxes. A user can conne
 10. Each batch → Gemini Service: identify job applications, deduplicate within batch, return structured JSON
 11. After all batches complete, final merge pass → Gemini: deduplicate across all batch results
 12. Store final result JSON in SyncJob, set status=completed
-13. Client receives results via SignalR events or polls `GET /api/sync/status/{jobId}`
+13. Client receives results via SignalR events or polls `GET /api/v1/sync/status/{jobId}`
 
 ### Recommended Client Flow
 
-1. Client calls `POST /api/sync` → gets `jobId`, processing begins immediately
+1. Client calls `POST /api/v1/sync` → gets `jobId`, processing begins immediately
 2. Client connects to SignalR, calls `JoinJob(jobId)` — may miss first 1-2 progress events
-3. Client calls `GET /api/sync/status/{jobId}` once to catch up on current `stage`/`progress`
+3. Client calls `GET /api/v1/sync/status/{jobId}` once to catch up on current `stage`/`progress`
 4. Client receives remaining `SyncProgress` events in real-time
-5. On `SyncCompleted`, client calls `GET /api/sync/status/{jobId}` to fetch final results
+5. On `SyncCompleted`, client calls `GET /api/v1/sync/status/{jobId}` to fetch final results
 
 ### OAuth Connect Flow
 
-1. Client calls `GET /api/mail-connect/gmail/url`
-2. Backend returns Google OAuth consent URL
-3. Client redirects user to Google
-4. User grants consent, Google redirects back with auth code
-5. Client calls `POST /api/mail-connect/gmail/connect` with `code` and optional `userId`
-6. Backend exchanges code for tokens and reads account identity claims (`sub`, `email`, granted scopes)
-7. If `userId` missing, backend creates User; if present, backend verifies User exists
-8. Backend upserts EmailConnection using `(UserId, SubjectId)` and stores refresh token/scopes/status
-9. Returns `userId`, `emailConnectionId`, and connection status
+1. Frontend links user to `GET /api/v1/mail-connect/gmail/start`
+2. Backend redirects (302) user to Google OAuth consent URL (scopes: `gmail.readonly openid profile email`)
+3. User grants consent, Google redirects to `GET /api/v1/mail-connect/gmail/callback?code=...`
+4. Backend exchanges code for tokens and reads identity claims from ID token (`sub`, `email`, `given_name`, `family_name`)
+5. Backend finds existing user by `SubjectId` (returning user) or creates a new User from ID token name claims
+6. Backend upserts EmailConnection by `SubjectId` and stores refresh token/scopes/status
+7. Backend redirects (302) user to frontend dashboard with `userId` and `connectionId` query params
+8. On error (user denied consent or missing code), backend redirects to frontend error page
 
 ### Error Flow
 
@@ -162,7 +161,7 @@ api-web/
 ├── core/                     # Domain entities (User, EmailConnection, SyncJob), interfaces (incl. ISyncHubNotifier, ISyncJobChannel), models, enums
 ├── infrastructure/           # Gmail service, Gemini service, token exchange service, EF Core DbContext, SyncOrchestrator, SyncProgressReporter, SyncJobChannel
 ├── worker/                   # SyncBackgroundService (BackgroundService)
-└── api-contracts/            # Request DTOs (GmailConnectRequest with optional userId, StartSyncRequest with emailConnectionId)
+└── api-contracts/            # Request DTOs (StartSyncRequest with emailConnectionId)
 ```
 
 ## Tech Stack
@@ -217,7 +216,7 @@ Endpoint: `/hubs/sync`
 
 ### Fallback
 
-Polling endpoint `GET /api/sync/status/{jobId}` still works — response includes `stage` and `progress` fields for clients that can’t use SignalR.
+Polling endpoint `GET /api/v1/sync/status/{jobId}` still works — response includes `stage` and `progress` fields for clients that can’t use SignalR.
 
 ## Gemini Prompt Strategy
 
