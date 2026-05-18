@@ -10,5 +10,6 @@ public class EmailConnection : BaseEntity
     public string SubjectId { get; set; } = string.Empty;
     public string RefreshToken { get; set; } = string.Empty;
     public string GrantedScopes { get; set; } = string.Empty;
+    public EmailConnectionProvider Provider { get; set; } = EmailConnectionProvider.Gmail;
     public EmailConnectionStatus Status { get; set; } = EmailConnectionStatus.Active;
 }

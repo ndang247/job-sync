@@ -2,11 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build a .NET 10 REST API that syncs job applications from multiple email connections per user via Gemini AI classification.
+**Goal:** Build a .NET 10 REST API that syncs job applications from multiple email connections per user via OpenAI GPT classification.
 
-**Architecture:** Connection-scoped async pipeline — client starts sync with `userId` + `emailConnectionId`, API enqueues a sync job, channel-based background worker processes jobs concurrently, mints short-lived Gmail access tokens from stored refresh tokens at runtime, classifies/deduplicates emails with Gemini, and persists results in PostgreSQL. SignalR provides real-time progress; status polling remains a fallback. Reconnect-required conditions (missing/revoked/invalid grant) are surfaced via API conflict responses and failed job state.
+**Architecture:** Connection-scoped async pipeline — client starts sync with `userId` + `emailConnectionId`, API enqueues a sync job, channel-based background worker processes jobs concurrently, mints short-lived Gmail access tokens from stored refresh tokens at runtime, classifies/deduplicates emails with OpenAI GPT, and persists results in PostgreSQL. SignalR provides real-time progress; status polling remains a fallback. Reconnect-required conditions (missing/revoked/invalid grant) are surfaced via API conflict responses and failed job state.
 
-**Tech Stack:** .NET 10, ASP.NET Core Web API, EF Core + Npgsql (PostgreSQL), Google.Apis.Gmail.v1, Google Generative AI SDK (Gemini 2.0 Flash), BackgroundService + Channel<T>, SignalR, xUnit + WebApplicationFactory + NSubstitute (integration tests)
+**Tech Stack:** .NET 10, ASP.NET Core Web API, EF Core + Npgsql (PostgreSQL), Google.Apis.Gmail.v1, OpenAI .NET SDK (GPT-4o-mini), BackgroundService + Channel<T>, SignalR, xUnit + WebApplicationFactory + NSubstitute (integration tests)
 
 ---
 
@@ -47,8 +47,8 @@ api-web/
 │   ├── Models/
 │   │   └── JobApplication.cs
 │   ├── Interfaces/
-│   │   ├── IGmailService.cs
-│   │   ├── IGeminiService.cs
+│   │   ├── IEmailService.cs
+│   │   ├── IAIService.cs
 │   │   ├── IGoogleTokenExchanger.cs
 │   │   ├── ISyncOrchestrator.cs
 │   │   ├── ISyncProgressReporter.cs
@@ -70,7 +70,7 @@ api-web/
 │   │       └── AppDbContextModelSnapshot.cs
 │   ├── Services/
 │   │   ├── GmailService.cs
-│   │   ├── GeminiService.cs
+│   │   ├── OpenAIService.cs
 │   │   ├── GoogleTokenExchanger.cs
 │   │   ├── SyncOrchestrator.cs
 │   │   ├── SyncProgressReporter.cs
@@ -110,7 +110,7 @@ api-web/
 
 ## Task 3: Core Interfaces ✅ COMPLETED
 
-- [x] Define core service contracts for Gmail, Gemini, orchestration, and progress reporting.
+- [x] Define core service contracts for email, AI, orchestration, and progress reporting.
 - [x] Keep orchestrator contract aligned with job-scoped execution.
 
 ---
@@ -142,18 +142,18 @@ api-web/
 
 ---
 
-## Task 7: Gemini Service ✅ COMPLETED
+## Task 7: AI Service (OpenAI) ✅ COMPLETED
 
 - [x] Implement batch classification and final deduplication flow.
 - [x] Standardize prompt/response handling to JSON-only parsing with safe fallback.
-- [x] Add/keep Gemini SDK dependency.
+- [x] Add OpenAI .NET SDK dependency (replaced Google_GenerativeAI).
 - [ ] Add focused unit tests for empty inputs and malformed response handling.
 
 ---
 
 ## Task 8: Sync Orchestrator with Progress Reporting ✅ COMPLETED
 
-- [x] Implement batch orchestration across Gmail fetch, Gemini classify, and deduplicate.
+- [x] Implement batch orchestration across email fetch, AI classify, and deduplicate.
 - [x] Emit stage-based progress updates throughout job execution.
 - [ ] Add orchestrator unit tests for batch behavior and progress events.
 
@@ -204,7 +204,7 @@ api-web/
 ## Task 14: Program Startup and DI Wiring ✅ COMPLETED
 
 - [x] Register controllers, EF Core, SignalR, CORS, and hosted worker.
-- [x] Register Gmail/Gemini/orchestrator/progress/notifier/channel services.
+- [x] Register email/AI/orchestrator/progress/notifier/channel services.
 - [x] Register token exchanger and expose partial `Program` for integration tests.
 
 ---

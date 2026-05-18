@@ -92,6 +92,7 @@ public class MailConnectController : ControllerBase
                 SubjectId = tokenResult.SubjectId,
                 RefreshToken = tokenResult.RefreshToken,
                 GrantedScopes = tokenResult.GrantedScopes,
+                Provider = EmailConnectionProvider.Gmail,
                 Status = EmailConnectionStatus.Active
             };
             _dbContext.EmailConnections.Add(connection);

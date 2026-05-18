@@ -16,8 +16,8 @@ builder.Services.AddSignalR();
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
 
-builder.Services.AddScoped<IGmailService, GmailService>();
-builder.Services.AddScoped<IGeminiService, GeminiService>();
+builder.Services.AddScoped<IEmailService, GmailService>();
+builder.Services.AddScoped<IAIService, OpenAIService>();
 builder.Services.AddScoped<ISyncOrchestrator, SyncOrchestrator>();
 builder.Services.AddScoped<ISyncProgressReporter, SyncProgressReporter>();
 builder.Services.AddScoped<ISyncHubNotifier, SyncHubNotifier>();

@@ -23,6 +23,8 @@ public class MailConnectControllerTests : IClassFixture<CustomWebApplicationFact
         });
     }
 
+    #region Gmail Connect Tests
+
     [Fact]
     public async Task GmailStart_RedirectsToGoogle()
     {
@@ -72,6 +74,7 @@ public class MailConnectControllerTests : IClassFixture<CustomWebApplicationFact
         Assert.NotNull(conn);
         Assert.Equal("refresh-token-456", conn.RefreshToken);
         Assert.Equal("test@gmail.com", conn.Email);
+        Assert.Equal(EmailConnectionProvider.Gmail, conn.Provider);
         Assert.Equal(EmailConnectionStatus.Active, conn.Status);
     }
 
@@ -147,4 +150,6 @@ public class MailConnectControllerTests : IClassFixture<CustomWebApplicationFact
         await _factory.MockTokenExchanger.Received(1)
             .ExchangeCodeAsync("my-special-code", Arg.Any<CancellationToken>());
     }
+
+    #endregion
 }

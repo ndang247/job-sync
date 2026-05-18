@@ -2,15 +2,15 @@
 
 ## Overview
 
-Job Sync tracks job applications by syncing from Gmail inboxes. A user can connect multiple Gmail accounts via OAuth, then trigger sync for a specific email connection. Sync fetches emails from the last 30 days, processes them through Gemini AI to identify and deduplicate job application emails, and returns structured results.
+Job Sync tracks job applications by syncing from Gmail inboxes. A user can connect multiple Gmail accounts via OAuth, then trigger sync for a specific email connection. Sync fetches emails from the last 30 days, processes them through OpenAI GPT to identify and deduplicate job application emails, and returns structured results.
 
 ## Decisions
 
 - No authentication — anyone can use the app, connects own Gmail
 - PostgreSQL — users + email connections + sync jobs with `jsonb` for results
 - Job applications returned via sync job results (not separately persisted)
-- Google AI SDK (Gemini) for email classification and deduplication
-- Batch emails to Gemini, deduplicate within batch + final merge pass across batches
+- OpenAI GPT (via official OpenAI .NET SDK) for email classification and deduplication
+- Batch emails to OpenAI, deduplicate within batch + final merge pass across batches
 - REST API with controllers, .NET 10
 - Frontend-agnostic API (React Native/Expo likely, but API works with any client)
 - Async processing with SignalR real-time progress (polling as fallback)
@@ -97,8 +97,8 @@ Job Sync tracks job applications by syncing from Gmail inboxes. A user can conne
 ### Components
 
 - **API Layer** — REST controllers, request validation
-- **Gmail Service** — mints short-lived access token from stored refresh token, fetches emails via Gmail API
-- **Gemini Service** — batches emails, sends to Gemini, parses structured response
+- **Email Service (Gmail)** — mints short-lived access token from stored refresh token, fetches emails via Gmail API
+- **AI Service (OpenAI)** — batches emails, sends to OpenAI GPT, parses structured response
 - **Sync Orchestrator** — coordinates the pipeline (fetch → batch → process → merge → store result)
 - **Progress Reporter** — persists progress to DB + delegates to ISyncHubNotifier for SignalR push
 - **Hub Notifier** — sends SignalR events (SyncProgress, SyncCompleted, SyncFailed) via IHubContext
@@ -123,10 +123,62 @@ Job Sync tracks job applications by syncing from Gmail inboxes. A user can conne
 7. Gmail Service mints short-lived access token from refresh token and fetches last 30 days of emails
 8. If token mint fails with revoked/expired grant, set EmailConnection status to `needs_reconnect` and fail job with reconnect message
 9. Sync Orchestrator batches emails (20 per batch)
-10. Each batch → Gemini Service: identify job applications, deduplicate within batch, return structured JSON
-11. After all batches complete, final merge pass → Gemini: deduplicate across all batch results
+10. Each batch → AI Service (OpenAI): identify job applications, deduplicate within batch, return structured JSON
+11. After all batches complete, final merge pass → AI Service: deduplicate across all batch results
 12. Store final result JSON in SyncJob, set status=completed
 13. Client receives results via SignalR events or polls `GET /api/v1/sync/status/{jobId}`
+
+### Sync Pipeline Sequence Diagram
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant SyncController
+    participant SyncJobChannel
+    participant Worker as SyncBackgroundService
+    participant Orchestrator as SyncOrchestrator
+    participant Email as IEmailService (Gmail)
+    participant AI as IAIService (OpenAI)
+    participant DB as PostgreSQL
+    participant SignalR as SyncHub
+
+    Client->>SyncController: POST /api/v1/sync {userId, emailConnectionId}
+    SyncController->>DB: Validate user, connection, no active job
+    SyncController->>DB: Create SyncJob (status=pending)
+    SyncController->>SyncJobChannel: Write jobId
+    SyncController-->>Client: 200 {jobId}
+
+    Client->>SignalR: JoinJob(jobId)
+
+    SyncJobChannel->>Worker: Read jobId
+    Worker->>DB: Load job, set status=processing
+
+    Worker->>Orchestrator: ExecuteSyncAsync(jobId, connectionId)
+    Orchestrator->>SignalR: ReportProgress("Fetching emails", 5%)
+    Orchestrator->>Email: FetchEmailsAsync(connectionId)
+    Email->>Email: Mint access token from refresh token
+    Email-->>Orchestrator: List<EmailMessage>
+
+    loop Each batch of 20 emails
+        Orchestrator->>SignalR: ReportProgress("Processing batch N/M", %)
+        Orchestrator->>AI: ClassifyBatchAsync(batch)
+        AI->>AI: Send prompt to OpenAI GPT-4o-mini
+        AI-->>Orchestrator: List<JobApplication>
+    end
+
+    Orchestrator->>SignalR: ReportProgress("Deduplicating results", 90%)
+    Orchestrator->>AI: DeduplicateAsync(allApplications)
+    AI-->>Orchestrator: List<JobApplication> (deduplicated)
+
+    Orchestrator->>SignalR: ReportProgress("Done", 100%)
+    Orchestrator-->>Worker: Final results
+
+    Worker->>DB: Store results, set status=completed
+    Worker->>SignalR: SyncCompleted
+
+    Client->>SyncController: GET /api/v1/sync/status/{jobId}
+    SyncController-->>Client: {status, results}
+```
 
 ### Recommended Client Flow
 
@@ -158,8 +210,8 @@ Job Sync tracks job applications by syncing from Gmail inboxes. A user can conne
 ```
 api-web/
 ├── web-api/                  # REST controllers, Program.cs, DI config, SignalR hub, SyncHubNotifier
-├── core/                     # Domain entities (User, EmailConnection, SyncJob), interfaces (incl. ISyncHubNotifier, ISyncJobChannel), models, enums
-├── infrastructure/           # Gmail service, Gemini service, token exchange service, EF Core DbContext, SyncOrchestrator, SyncProgressReporter, SyncJobChannel
+├── core/                     # Domain entities (User, EmailConnection, SyncJob), interfaces (IAIService, IEmailService, ISyncHubNotifier, ISyncJobChannel), models, enums
+├── infrastructure/           # GmailService (IEmailService), OpenAIService (IAIService), token exchange, EF Core DbContext, SyncOrchestrator, SyncProgressReporter, SyncJobChannel
 ├── worker/                   # SyncBackgroundService (BackgroundService)
 └── api-contracts/            # Request DTOs (StartSyncRequest with emailConnectionId)
 ```
@@ -169,7 +221,7 @@ api-web/
 - .NET 10, C#
 - Entity Framework Core with Npgsql (PostgreSQL)
 - Google.Apis.Gmail.v1 (Gmail SDK)
-- Google AI SDK for .NET (Gemini)
+- OpenAI .NET SDK (official)
 - `BackgroundService` for async job processing
 - `Microsoft.AspNetCore.SignalR` for real-time progress
 
@@ -218,7 +270,7 @@ Endpoint: `/hubs/sync`
 
 Polling endpoint `GET /api/v1/sync/status/{jobId}` still works — response includes `stage` and `progress` fields for clients that can’t use SignalR.
 
-## Gemini Prompt Strategy
+## AI Prompt Strategy
 
 ### Per-Batch Prompt
 
@@ -235,5 +287,5 @@ Polling endpoint `GET /api/v1/sync/status/{jobId}` still works — response incl
 | Connection missing/not active on start | Return 409 `CONNECTION_REQUIRES_GRANT`                 |
 | Token refresh invalid/revoked/expired  | Set EmailConnection `needs_reconnect`, mark job failed |
 | Gmail API error                        | Retry once, then mark failed                           |
-| Gemini API error                       | Retry batch once, then mark failed                     |
+| OpenAI API error                       | Retry batch once, then mark failed                     |
 | Unhandled exception                    | Catch-all, mark job failed with message                |

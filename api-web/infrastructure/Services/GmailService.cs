@@ -13,7 +13,7 @@ using Microsoft.Extensions.Configuration;
 
 namespace infrastructure.Services;
 
-public class GmailService : IGmailService
+public class GmailService : IEmailService
 {
     private readonly AppDbContext _dbContext;
     private readonly IConfiguration _configuration;

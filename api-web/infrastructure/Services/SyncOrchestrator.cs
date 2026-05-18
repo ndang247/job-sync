@@ -5,21 +5,21 @@ namespace infrastructure.Services;
 
 public class SyncOrchestrator : ISyncOrchestrator
 {
-    private readonly IGmailService _gmailService;
-    private readonly IGeminiService _geminiService;
+    private readonly IEmailService _emailService;
+    private readonly IAIService _aiService;
     private const int BatchSize = 20;
 
-    public SyncOrchestrator(IGmailService gmailService, IGeminiService geminiService)
+    public SyncOrchestrator(IEmailService emailService, IAIService aiService)
     {
-        _gmailService = gmailService;
-        _geminiService = geminiService;
+        _emailService = emailService;
+        _aiService = aiService;
     }
 
     public async Task<List<JobApplication>> ExecuteSyncAsync(Guid jobId, Guid emailConnectionId, ISyncProgressReporter progressReporter, CancellationToken cancellationToken = default)
     {
         await progressReporter.ReportProgressAsync(jobId, "Fetching emails", 5, cancellationToken);
 
-        var emails = await _gmailService.FetchEmailsAsync(emailConnectionId, cancellationToken);
+        var emails = await _emailService.FetchEmailsAsync(emailConnectionId, cancellationToken);
 
         if (emails.Count == 0)
             return new List<JobApplication>();
@@ -33,7 +33,7 @@ public class SyncOrchestrator : ISyncOrchestrator
             var percent = 10 + (int)((80.0 / totalBatches) * i);
             await progressReporter.ReportProgressAsync(jobId, $"Processing batch {i + 1}/{totalBatches}", percent, cancellationToken);
 
-            var batchResults = await _geminiService.ClassifyBatchAsync(batches[i].ToList(), cancellationToken);
+            var batchResults = await _aiService.ClassifyBatchAsync(batches[i].ToList(), cancellationToken);
             allApplications.AddRange(batchResults);
         }
 
@@ -42,7 +42,7 @@ public class SyncOrchestrator : ISyncOrchestrator
 
         await progressReporter.ReportProgressAsync(jobId, "Deduplicating results", 90, cancellationToken);
 
-        var deduplicated = await _geminiService.DeduplicateAsync(allApplications, cancellationToken);
+        var deduplicated = await _aiService.DeduplicateAsync(allApplications, cancellationToken);
 
         await progressReporter.ReportProgressAsync(jobId, "Done", 100, cancellationToken);
 

@@ -8,7 +8,7 @@ public class EmailMessage
     public DateTime Date { get; set; }
 }
 
-public interface IGmailService
+public interface IEmailService
 {
     Task<List<EmailMessage>> FetchEmailsAsync(Guid emailConnectionId, CancellationToken cancellationToken = default);
 }

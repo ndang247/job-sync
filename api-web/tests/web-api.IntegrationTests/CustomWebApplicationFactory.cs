@@ -28,7 +28,8 @@ public class CustomWebApplicationFactory : WebApplicationFactory<Program>
                 ["Google:ClientId"] = "test-client-id",
                 ["Google:ClientSecret"] = "test-client-secret",
                 ["Google:RedirectUri"] = "http://localhost/api/v1/mail-connect/gmail/callback",
-                ["Google:GeminiApiKey"] = "test-gemini-key",
+                ["OpenAI:ApiKey"] = "test-openai-key",
+                ["OpenAI:Model"] = "gpt-4o-mini",
                 ["FrontendUrl"] = "http://localhost:4200",
             });
         });
