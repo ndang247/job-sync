@@ -18,6 +18,10 @@ public class EmailConnectionConfiguration : IEntityTypeConfiguration<EmailConnec
             .HasConversion<string>()
             .HasMaxLength(30)
             .IsRequired();
+        builder.Property(ec => ec.Provider)
+                .HasConversion<string>()
+                .HasMaxLength(30)
+                .IsRequired();
         builder.HasIndex(ec => new { ec.UserId, ec.SubjectId }).IsUnique();
         builder.HasQueryFilter(ec => ec.DeletedAt == null);
     }
