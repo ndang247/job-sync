@@ -33,6 +33,7 @@ public class SyncBackgroundService : BackgroundService
     // so multiple users syncing simultaneously are handled in parallel.
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        _logger.LogInformation("SyncBackgroundService started at: {Time}", DateTimeOffset.Now);
         await RecoverOrphanedJobsAsync(stoppingToken);
 
         await foreach (var jobId in _channel.ReadAllAsync(stoppingToken))
@@ -68,9 +69,10 @@ public class SyncBackgroundService : BackgroundService
             var progressReporter = scope.ServiceProvider.GetRequiredService<ISyncProgressReporter>();
 
             var job = await dbContext.SyncJobs.FirstOrDefaultAsync(j => j.Id == jobId, cancellationToken);
-            if (job is null || job.Status != SyncJobStatus.Pending)
+            if (job is null || job.Status == SyncJobStatus.Completed || job.Status == SyncJobStatus.Failed)
                 return;
 
+            _logger.LogInformation("Starting sync job {JobId} for email connection {EmailConnectionId}", job.Id, job.EmailConnectionId);
             job.Status = SyncJobStatus.Processing;
             await dbContext.SaveChangesAsync(cancellationToken);
 
@@ -79,6 +81,8 @@ public class SyncBackgroundService : BackgroundService
             job.Result = JsonSerializer.SerializeToDocument(results);
             job.Status = SyncJobStatus.Completed;
             await dbContext.SaveChangesAsync(cancellationToken);
+
+            _logger.LogInformation("Completed sync job {JobId} with {ResultCount} applications found", job.Id, results.Count);
 
             await progressReporter.ReportCompletedAsync(job.Id, cancellationToken);
         }

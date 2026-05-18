@@ -50,7 +50,7 @@ public class OpenAIService : IAIService
         var client = CreateClient();
 
         var emailsText = string.Join("\n---\n", emails.Select(e =>
-            $"Subject: {e.Subject}\nFrom: {e.From}\nDate: {e.Date:dd-MM-yyyy}\nBody: {e.Body[..Math.Min(e.Body.Length, 500)]}"));
+            $"Subject: {e.Subject}\nFrom: {e.From}\nDate: {e.Date:dd-MM-yyyy}\nBody: {e.Body[..Math.Min(e.Body.Length, 7000)]}"));
 
         var prompt = $"""
             Given these emails, identify which are job application related.

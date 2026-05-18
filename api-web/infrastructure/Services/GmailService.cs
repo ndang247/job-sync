@@ -10,18 +10,23 @@ using core.Interfaces;
 using infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using Google.Apis.Util;
+using Microsoft.Extensions.Logging;
+using System.Globalization;
 
 namespace infrastructure.Services;
 
-public class GmailService : IEmailService
+public partial class GmailService : IEmailService
 {
     private readonly AppDbContext _dbContext;
     private readonly IConfiguration _configuration;
+    private readonly ILogger<GmailService> _logger;
 
-    public GmailService(AppDbContext dbContext, IConfiguration configuration)
+    public GmailService(AppDbContext dbContext, IConfiguration configuration, ILogger<GmailService> logger)
     {
         _dbContext = dbContext;
         _configuration = configuration;
+        _logger = logger;
     }
 
     public async Task<List<EmailMessage>> FetchEmailsAsync(Guid emailConnectionId, CancellationToken cancellationToken = default)
@@ -38,7 +43,7 @@ public class GmailService : IEmailService
             ApplicationName = "Job-Sync"
         });
 
-        var after = DateTimeOffset.UtcNow.AddDays(-30).ToUnixTimeSeconds();
+        var after = DateTimeOffset.UtcNow.AddDays(-1).ToUnixTimeSeconds();
         var request = gmailService.Users.Messages.List("me");
         request.Q = $"after:{after}";
         request.MaxResults = 500;
@@ -103,22 +108,26 @@ public class GmailService : IEmailService
         return credential;
     }
 
-    private static EmailMessage ParseMessage(Message message)
+    private EmailMessage ParseMessage(Message message)
     {
         var headers = message.Payload?.Headers ?? [];
         var subject = headers.FirstOrDefault(h => h.Name == "Subject")?.Value ?? "";
         var from = headers.FirstOrDefault(h => h.Name == "From")?.Value ?? "";
         var dateStr = headers.FirstOrDefault(h => h.Name == "Date")?.Value ?? "";
 
-        DateTime.TryParse(dateStr, out var date);
-
+        var cleanedDate = ParenthesesRegex().Replace(dateStr, "");
+        DateTimeOffset.TryParse(cleanedDate, CultureInfo.InvariantCulture, DateTimeStyles.None, out var date);
+        if (date == default)
+        {
+            _logger.LogWarning("Failed to parse date '{DateStr}' for email '{Subject}' from '{From}'", dateStr, subject, from);
+        }
         var body = GetBody(message.Payload);
 
         return new EmailMessage
         {
             Subject = subject,
             From = from,
-            Date = date,
+            Date = DateOnly.FromDateTime(date.DateTime),
             Body = body
         };
     }
@@ -127,20 +136,26 @@ public class GmailService : IEmailService
     {
         if (payload == null) return string.Empty;
 
-        if (!string.IsNullOrEmpty(payload.Body?.Data))
+        if ((payload.MimeType == "text/plain" || payload.MimeType == "text/html")
+            && !string.IsNullOrEmpty(payload.Body?.Data))
         {
             return DecodeBase64Url(payload.Body.Data);
         }
 
-        if (payload.Parts != null)
+        if (payload.Parts == null) return string.Empty;
+
+        foreach (var part in payload.Parts)
         {
-            foreach (var part in payload.Parts)
-            {
-                if ((part.MimeType == "text/plain" || part.MimeType == "text/html") && !string.IsNullOrEmpty(part.Body?.Data))
-                {
-                    return DecodeBase64Url(part.Body.Data);
-                }
-            }
+            if ((part.MimeType == "text/plain" || part.MimeType == "text/html") && !string.IsNullOrEmpty(part.Body?.Data))
+                return DecodeBase64Url(part.Body.Data);
+        }
+
+        // Recurse into nested multipart parts
+        foreach (var part in payload.Parts)
+        {
+            var body = GetBody(part);
+            if (!string.IsNullOrEmpty(body))
+                return body;
         }
 
         return string.Empty;
@@ -157,4 +172,7 @@ public class GmailService : IEmailService
         var bytes = Convert.FromBase64String(data);
         return System.Text.Encoding.UTF8.GetString(bytes);
     }
+
+    [System.Text.RegularExpressions.GeneratedRegex(@"\s*\(.*?\)\s*$")]
+    private static partial System.Text.RegularExpressions.Regex ParenthesesRegex();
 }

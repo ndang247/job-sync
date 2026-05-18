@@ -100,6 +100,6 @@ public class MailConnectController : ControllerBase
 
         await _dbContext.SaveChangesAsync();
 
-        return Redirect($"{frontendUrl}/dashboard?userId={user.Id}&connectionId={connection.Id}");
+        return Redirect($"{frontendUrl}/?userId={user.Id}&connectionId={connection.Id}");
     }
 }

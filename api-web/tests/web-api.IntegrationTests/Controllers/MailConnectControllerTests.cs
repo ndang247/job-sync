@@ -52,7 +52,7 @@ public class MailConnectControllerTests : IClassFixture<CustomWebApplicationFact
 
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var location = response.Headers.Location!.ToString();
-        Assert.Contains("http://localhost:4200/dashboard", location);
+        Assert.Contains("http://localhost:4200", location);
         Assert.Contains("userId=", location);
         Assert.Contains("connectionId=", location);
 
