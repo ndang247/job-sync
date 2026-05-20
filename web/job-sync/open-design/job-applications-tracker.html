@@ -1,0 +1,1222 @@
+
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Applications Inbox</title>
+  <style>
+    :root {
+      --bg: oklch(98% 0.004 95);
+      --surface: oklch(100% 0.002 95);
+      --fg: oklch(20% 0.018 70);
+      --muted: oklch(48% 0.012 70);
+      --border: oklch(90% 0.006 95);
+      --accent: oklch(52% 0.10 28);
+      --success: oklch(58% 0.11 145);
+      --shadow: 0 16px 50px color-mix(in oklab, var(--fg) 8%, transparent);
+      --font-display: 'Iowan Old Style', 'Charter', Georgia, serif;
+      --font-body: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      --font-mono: 'JetBrains Mono', 'SFMono-Regular', ui-monospace, monospace;
+      --radius: 24px;
+      color-scheme: light;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html, body {
+      margin: 0;
+      min-height: 100%;
+      background: var(--bg);
+      color: var(--fg);
+      font-family: var(--font-body);
+    }
+
+    body {
+      padding: clamp(18px, 3vw, 48px);
+    }
+
+    button,
+    input,
+    textarea,
+    select {
+      font: inherit;
+    }
+
+    button {
+      cursor: pointer;
+    }
+
+    .app-shell {
+      width: min(1120px, 100%);
+      margin: 0 auto;
+      background: color-mix(in oklab, var(--surface) 94%, white);
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow);
+    }
+
+    .hero {
+      padding: clamp(24px, 4vw, 48px);
+      display: grid;
+      gap: 24px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .eyebrow {
+      margin: 0;
+      font: 600 11px/1.2 var(--font-mono);
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .hero-grid {
+      display: grid;
+      gap: 24px;
+      grid-template-columns: minmax(0, 1.35fr) minmax(300px, 0.9fr);
+      align-items: end;
+    }
+
+    .hero h1 {
+      margin: 0;
+      font-family: var(--font-display);
+      font-size: clamp(2.4rem, 4vw, 4.9rem);
+      font-weight: 400;
+      line-height: 0.95;
+      letter-spacing: -0.03em;
+      text-wrap: pretty;
+      max-width: 11ch;
+    }
+
+    .hero p {
+      margin: 0;
+      max-width: 34rem;
+      color: var(--muted);
+      font-size: clamp(1rem, 1.5vw, 1.1rem);
+      line-height: 1.65;
+      text-wrap: pretty;
+    }
+
+    .hero-side {
+      display: grid;
+      gap: 18px;
+      justify-items: start;
+    }
+
+    .action-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .button {
+      min-height: 44px;
+      padding: 0 18px;
+      border: 1px solid var(--fg);
+      background: transparent;
+      color: var(--fg);
+      transition: transform 180ms ease, background-color 180ms ease, color 180ms ease, border-color 180ms ease;
+    }
+
+    .button:hover:not(:disabled),
+    .button:focus-visible:not(:disabled) {
+      transform: translateY(-1px);
+    }
+
+    .button:focus-visible {
+      outline: 2px solid color-mix(in oklab, var(--accent) 55%, white);
+      outline-offset: 3px;
+    }
+
+    .button:disabled {
+      cursor: not-allowed;
+      opacity: 0.48;
+    }
+
+    .button-primary {
+      background: var(--fg);
+      color: var(--surface);
+      border-color: var(--fg);
+    }
+
+    .button-primary:hover:not(:disabled),
+    .button-primary:focus-visible:not(:disabled) {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: var(--surface);
+    }
+
+    .hero-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 18px;
+      align-items: center;
+      color: var(--muted);
+      font-size: 0.95rem;
+    }
+
+    .meta-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      border: 1px solid var(--border);
+      color: var(--fg);
+      background: var(--surface);
+    }
+
+    .meta-pill strong {
+      font-weight: 600;
+    }
+
+    .content {
+      padding: clamp(20px, 3vw, 40px);
+      display: grid;
+      gap: 20px;
+      container-type: inline-size;
+      container-name: applications;
+    }
+
+    .sync-panel {
+      display: none;
+      gap: 14px;
+      padding: 18px;
+      border: 1px solid color-mix(in oklab, var(--accent) 24%, var(--border));
+      background: color-mix(in oklab, var(--accent) 8%, var(--surface));
+    }
+
+    .sync-panel.active {
+      display: grid;
+    }
+
+    .sync-head {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: baseline;
+      justify-content: space-between;
+    }
+
+    .sync-title {
+      margin: 0;
+      font-family: var(--font-display);
+      font-size: clamp(1.2rem, 2vw, 1.55rem);
+      font-weight: 400;
+    }
+
+    .sync-stage {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.98rem;
+    }
+
+    .sync-progress {
+      display: grid;
+      gap: 10px;
+    }
+
+    .progress-track {
+      height: 10px;
+      border: 1px solid color-mix(in oklab, var(--accent) 30%, var(--border));
+      background: var(--surface);
+      overflow: hidden;
+    }
+
+    .progress-fill {
+      width: 0;
+      height: 100%;
+      background: linear-gradient(90deg, color-mix(in oklab, var(--accent) 84%, black), var(--accent));
+      transition: width 320ms ease;
+    }
+
+    .progress-meta {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      color: var(--muted);
+      font-size: 0.92rem;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .status-note {
+      min-height: 22px;
+      color: var(--muted);
+      font-size: 0.92rem;
+    }
+
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      padding: 18px;
+      background: color-mix(in oklab, var(--fg) 24%, transparent);
+      backdrop-filter: blur(6px);
+      z-index: 20;
+    }
+
+    .modal-overlay[hidden] {
+      display: none;
+    }
+
+    .modal-card {
+      width: min(100%, 460px);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      padding: clamp(20px, 4vw, 28px);
+      display: grid;
+      gap: 18px;
+      box-shadow: var(--shadow);
+    }
+
+    .modal-card h3 {
+      margin: 0;
+      font-family: var(--font-display);
+      font-size: clamp(1.7rem, 3vw, 2.3rem);
+      font-weight: 400;
+      line-height: 0.98;
+    }
+
+    .modal-card p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.7;
+      text-wrap: pretty;
+    }
+
+    .field-group {
+      display: grid;
+      gap: 10px;
+    }
+
+    .field-label {
+      font: 600 11px/1.2 var(--font-mono);
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .select-input {
+      min-height: 48px;
+      width: 100%;
+      padding: 0 14px;
+      border: 1px solid var(--border);
+      border-radius: 0;
+      background: var(--surface);
+      color: var(--fg);
+    }
+
+    .select-input:focus-visible {
+      outline: 2px solid color-mix(in oklab, var(--accent) 55%, white);
+      outline-offset: 2px;
+    }
+
+    .modal-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      justify-content: flex-end;
+    }
+
+    .section-head {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 18px;
+      justify-content: space-between;
+      align-items: end;
+    }
+
+    .section-head h2 {
+      margin: 0;
+      font-family: var(--font-display);
+      font-size: clamp(1.6rem, 2.2vw, 2.2rem);
+      font-weight: 400;
+      line-height: 1;
+    }
+
+    .section-head p {
+      margin: 0;
+      color: var(--muted);
+      max-width: 42rem;
+      line-height: 1.6;
+    }
+
+    .data-shell {
+      display: grid;
+      gap: 14px;
+    }
+
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 14px;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .search-field {
+      flex: 1 1 320px;
+      display: grid;
+      gap: 8px;
+    }
+
+    .search-input {
+      min-height: 48px;
+      width: 100%;
+      padding: 0 14px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--fg);
+    }
+
+    .search-input::placeholder {
+      color: var(--muted);
+    }
+
+    .search-input:focus-visible {
+      outline: 2px solid color-mix(in oklab, var(--accent) 55%, white);
+      outline-offset: 2px;
+    }
+
+    .toolbar-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 18px;
+      align-items: center;
+      color: var(--muted);
+      font-size: 0.94rem;
+    }
+
+    .state-panel {
+      border: 1px solid var(--border);
+      background: var(--surface);
+      overflow: hidden;
+    }
+
+    .table-wrap {
+      overflow-x: auto;
+    }
+
+    .applications-table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 720px;
+    }
+
+    .applications-table thead th {
+      padding: 16px 22px;
+      border-bottom: 1px solid var(--border);
+      color: var(--muted);
+      font: 600 11px/1.2 var(--font-mono);
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      text-align: left;
+      background: color-mix(in oklab, var(--bg) 38%, var(--surface));
+    }
+
+    .applications-table tbody td {
+      padding: 18px 22px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+    }
+
+    .applications-table tbody tr:last-child td {
+      border-bottom: 0;
+    }
+
+    .applications-table tbody tr:hover {
+      background: color-mix(in oklab, var(--accent) 3%, var(--surface));
+    }
+
+    .company {
+      font-weight: 600;
+      font-size: 1.02rem;
+      line-height: 1.4;
+    }
+
+    .role {
+      color: var(--fg);
+      line-height: 1.6;
+      text-wrap: pretty;
+    }
+
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      min-height: 30px;
+      padding: 0 11px;
+      border: 1px solid color-mix(in oklab, var(--accent) 25%, var(--border));
+      background: color-mix(in oklab, var(--accent) 7%, var(--surface));
+      text-transform: capitalize;
+      font-size: 0.92rem;
+      white-space: nowrap;
+    }
+
+    .status-pill[data-status="interviewing"] {
+      background: color-mix(in oklab, var(--accent) 12%, var(--surface));
+    }
+
+    .status-pill[data-status="offer"] {
+      border-color: color-mix(in oklab, var(--success) 28%, var(--border));
+      background: color-mix(in oklab, var(--success) 11%, var(--surface));
+    }
+
+    .status-pill[data-status="rejected"] {
+      border-color: color-mix(in oklab, oklch(54% 0.18 25) 24%, var(--border));
+      background: color-mix(in oklab, oklch(54% 0.18 25) 9%, var(--surface));
+    }
+
+    .status-pill[data-status="reviewing"] {
+      border-color: color-mix(in oklab, oklch(58% 0.09 85) 28%, var(--border));
+      background: color-mix(in oklab, oklch(58% 0.09 85) 10%, var(--surface));
+    }
+
+    .date {
+      font-variant-numeric: tabular-nums;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+
+    .pagination {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 22px;
+      border-top: 1px solid var(--border);
+      background: color-mix(in oklab, var(--bg) 28%, var(--surface));
+    }
+
+    .pagination-summary {
+      color: var(--muted);
+      font-size: 0.94rem;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .pagination-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .page-indicator {
+      min-width: 90px;
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.94rem;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .empty-state,
+    .loading-state {
+      padding: clamp(28px, 6vw, 72px);
+      display: grid;
+      gap: 16px;
+      justify-items: start;
+    }
+
+    .empty-state h3,
+    .loading-state h3 {
+      margin: 0;
+      font-family: var(--font-display);
+      font-weight: 400;
+      font-size: clamp(1.8rem, 3vw, 2.6rem);
+      line-height: 1;
+    }
+
+    .empty-state p,
+    .loading-state p {
+      margin: 0;
+      max-width: 36rem;
+      line-height: 1.7;
+      color: var(--muted);
+      text-wrap: pretty;
+    }
+
+    .skeleton-list {
+      width: 100%;
+      display: grid;
+      gap: 12px;
+      margin-top: 4px;
+    }
+
+    .skeleton-row {
+      height: 72px;
+      border: 1px solid var(--border);
+      background:
+        linear-gradient(
+          90deg,
+          color-mix(in oklab, var(--surface) 86%, var(--bg)) 0%,
+          color-mix(in oklab, var(--surface) 94%, white) 50%,
+          color-mix(in oklab, var(--surface) 86%, var(--bg)) 100%
+        );
+      background-size: 220% 100%;
+      animation: shimmer 1.3s linear infinite;
+    }
+
+    .inline-link {
+      border: 0;
+      padding: 0;
+      background: transparent;
+      color: var(--accent);
+      text-decoration: underline;
+      text-underline-offset: 0.2em;
+    }
+
+    .visually-hidden {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+
+    @keyframes shimmer {
+      from {
+        background-position: 0% 50%;
+      }
+      to {
+        background-position: 120% 50%;
+      }
+    }
+
+    @container applications (max-width: 740px) {
+      .toolbar {
+        align-items: stretch;
+      }
+
+      .toolbar-meta {
+        width: 100%;
+        justify-content: space-between;
+      }
+
+      .pagination,
+      .pagination-actions {
+        align-items: stretch;
+      }
+
+      .pagination {
+        padding: 16px;
+      }
+
+      .page-indicator,
+      .pagination-actions .button {
+        width: 100%;
+      }
+    }
+
+    @media (max-width: 900px) {
+      .hero-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 520px) {
+      body {
+        padding: 12px;
+      }
+
+      .hero,
+      .content {
+        padding-left: 16px;
+        padding-right: 16px;
+      }
+
+      .button {
+        width: 100%;
+        justify-content: center;
+      }
+
+      .action-row {
+        width: 100%;
+      }
+
+      .modal-actions > .button {
+        width: 100%;
+      }
+
+      .toolbar-meta {
+        gap: 8px;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *,
+      *::before,
+      *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="app-shell">
+    <section class="hero" aria-labelledby="page-title">
+      <p class="eyebrow">Candidate tracker</p>
+      <div class="hero-grid">
+        <div>
+          <h1 id="page-title">Track every application without opening your inbox.</h1>
+          <p>Applications are pulled from the server, organised into a single queue, and kept current with a staged Gmail sync so you can see where each submission stands.</p>
+        </div>
+        <div class="hero-side">
+          <div class="action-row" aria-label="Primary actions">
+            <button class="button" id="googleButton" type="button">Add Google account</button>
+            <button class="button button-primary" id="syncButton" type="button">Sync</button>
+          </div>
+          <div class="hero-meta">
+            <span class="meta-pill"><strong id="accountCount">1</strong> Google account connected</span>
+            <span id="lastSync">Last sync just now</span>
+          </div>
+          <div class="status-note" id="statusNote" aria-live="polite"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="content">
+      <div class="sync-panel" id="syncPanel" aria-live="polite">
+        <div class="sync-head">
+          <div>
+            <h2 class="sync-title">Syncing applications</h2>
+            <p class="sync-stage" id="syncStage">Preparing sync…</p>
+          </div>
+          <strong id="syncPercent">0%</strong>
+        </div>
+        <div class="sync-progress">
+          <div class="progress-track" aria-hidden="true">
+            <div class="progress-fill" id="progressFill"></div>
+          </div>
+          <div class="progress-meta">
+            <span id="progressCaption">Waiting for the next stage.</span>
+            <span id="progressStatus">Queued</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="section-head">
+        <div>
+          <h2>Applications from the server</h2>
+          <p id="applicationSummary">Loading the latest applications from your server…</p>
+        </div>
+      </div>
+
+      <div class="data-shell">
+        <div class="toolbar">
+          <div class="search-field">
+            <label class="field-label" for="searchInput">Search applications</label>
+            <input
+              class="search-input"
+              id="searchInput"
+              type="search"
+              placeholder="Search by company, role, status, or date"
+              autocomplete="off"
+            >
+          </div>
+          <div class="toolbar-meta">
+            <span id="resultCount">0 rows</span>
+            <span>10 per page</span>
+          </div>
+        </div>
+
+        <section class="state-panel" id="statePanel" aria-live="polite">
+          <div class="loading-state" id="loadingState">
+            <h3>Loading your applications</h3>
+            <p>The interface is pulling the latest rows from the server and preparing the candidate view.</p>
+            <div class="skeleton-list" aria-hidden="true">
+              <div class="skeleton-row"></div>
+              <div class="skeleton-row"></div>
+              <div class="skeleton-row"></div>
+            </div>
+          </div>
+
+          <div class="empty-state visually-hidden" id="emptyState">
+            <h3>No applications yet</h3>
+            <p id="emptyStateCopy">The server returned an empty result. Add a Google account or run another sync once new application emails arrive.</p>
+            <button class="inline-link" id="emptySyncAction" type="button">Run sync again</button>
+          </div>
+
+          <div class="visually-hidden" id="tableState">
+            <div class="table-wrap">
+              <table class="applications-table">
+                <thead>
+                  <tr>
+                    <th scope="col">Company name</th>
+                    <th scope="col">Role</th>
+                    <th scope="col">Status</th>
+                    <th scope="col">Applied date</th>
+                  </tr>
+                </thead>
+                <tbody id="tableBody"></tbody>
+              </table>
+            </div>
+            <div class="pagination">
+              <div class="pagination-summary" id="paginationSummary">Showing 0–0 of 0</div>
+              <div class="pagination-actions">
+                <button class="button" id="previousPageButton" type="button">Previous</button>
+                <span class="page-indicator" id="pageIndicator">Page 1 of 1</span>
+                <button class="button" id="nextPageButton" type="button">Next</button>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </section>
+  </main>
+
+  <div class="modal-overlay" id="syncModal" hidden>
+    <div
+      class="modal-card"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="syncModalTitle"
+      aria-describedby="syncModalDescription"
+    >
+      <div class="field-group">
+        <h3 id="syncModalTitle">Choose an account to sync.</h3>
+        <p id="syncModalDescription">Select the Google connection you want to scan before the staged sync begins.</p>
+      </div>
+      <div class="field-group">
+        <label class="field-label" for="syncAccountSelect">Connected account</label>
+        <select class="select-input" id="syncAccountSelect"></select>
+      </div>
+      <div class="modal-actions">
+        <button class="button" id="cancelSyncModal" type="button">Cancel</button>
+        <button class="button button-primary" id="confirmSyncModal" type="button">Start sync</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const PAGE_SIZE = 10;
+
+    const MOCK_COMPANIES = [
+      "Amazon",
+      "CYOS Solutions",
+      "Canva",
+      "Atlassian",
+      "WiseTech Global",
+      "Airwallex",
+      "Culture Amp",
+      "Xero",
+      "GitHub",
+      "Google",
+      "Microsoft",
+      "Stripe",
+      "SafetyCulture",
+      "Linktree",
+      "Rokt",
+      "Carsales",
+      "Notion",
+      "Block",
+      "Myob",
+      "Seek"
+    ];
+
+    const MOCK_ROLES = [
+      "Software Development Engineer, Public Sector Customer Engineering",
+      "Cloud Software Engineer",
+      "Frontend Engineer, Growth Platform",
+      "Product Engineer, Candidate Experience",
+      "Full Stack Developer, Internal Tools",
+      "Software Engineer, Developer Infrastructure",
+      "Applications Engineer, Platform Services",
+      "Backend Engineer, Identity",
+      "UI Engineer, Design Systems",
+      "Software Engineer, Integrations",
+      "Senior Web Engineer",
+      "Engineer, Automation & Workflow"
+    ];
+
+    const MOCK_STATUSES = ["applied", "reviewing", "interviewing", "offer", "rejected"];
+
+    function formatMockDate(offset) {
+      const date = new Date(Date.UTC(2026, 4, 20 - offset));
+      const day = String(date.getUTCDate()).padStart(2, "0");
+      const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+      const year = date.getUTCFullYear();
+      return `${day}-${month}-${year}`;
+    }
+
+    const SAMPLE_APPLICATIONS = Array.from({ length: 100 }, (_, index) => ({
+      Status: MOCK_STATUSES[index % MOCK_STATUSES.length],
+      JobRole: MOCK_ROLES[index % MOCK_ROLES.length],
+      AppliedDate: formatMockDate(index),
+      CompanyName: MOCK_COMPANIES[index % MOCK_COMPANIES.length]
+    }));
+
+    const syncStages = [
+      { progress: 14, stage: "Checking connected Google accounts", caption: "Confirming which inboxes are ready for sync." },
+      { progress: 37, stage: "Scanning application threads", caption: "Looking for new emails that contain role and company details." },
+      { progress: 63, stage: "Extracting role, company, and status", caption: "Turning email content into structured job application rows." },
+      { progress: 84, stage: "Writing the latest snapshot to the server", caption: "Saving parsed rows so the applications list stays current." },
+      { progress: 100, stage: "Finishing sync", caption: "Refreshing the visible list with the latest server response." }
+    ];
+
+    const INITIAL_ACCOUNTS = [
+      { id: "primary", label: "candidate.primary@gmail.com" }
+    ];
+
+    const state = {
+      applications: [],
+      accounts: INITIAL_ACCOUNTS.map((account) => ({ ...account })),
+      loading: true,
+      syncing: false,
+      syncModalOpen: false,
+      selectedAccountId: INITIAL_ACCOUNTS[0].id,
+      syncProgress: 0,
+      syncStage: "Preparing sync…",
+      syncCaption: "Waiting for the next stage.",
+      searchQuery: "",
+      currentPage: 1,
+      lastSyncLabel: "Last sync just now",
+      statusNote: "",
+      syncTimer: null,
+      syncAccountLabel: INITIAL_ACCOUNTS[0].label
+    };
+
+    const loadingState = document.getElementById("loadingState");
+    const emptyState = document.getElementById("emptyState");
+    const emptyStateCopy = document.getElementById("emptyStateCopy");
+    const tableState = document.getElementById("tableState");
+    const tableBody = document.getElementById("tableBody");
+    const applicationSummary = document.getElementById("applicationSummary");
+    const searchInput = document.getElementById("searchInput");
+    const resultCount = document.getElementById("resultCount");
+    const paginationSummary = document.getElementById("paginationSummary");
+    const pageIndicator = document.getElementById("pageIndicator");
+    const previousPageButton = document.getElementById("previousPageButton");
+    const nextPageButton = document.getElementById("nextPageButton");
+    const syncPanel = document.getElementById("syncPanel");
+    const syncStage = document.getElementById("syncStage");
+    const syncPercent = document.getElementById("syncPercent");
+    const progressFill = document.getElementById("progressFill");
+    const progressCaption = document.getElementById("progressCaption");
+    const progressStatus = document.getElementById("progressStatus");
+    const accountCount = document.getElementById("accountCount");
+    const lastSync = document.getElementById("lastSync");
+    const statusNote = document.getElementById("statusNote");
+    const syncButton = document.getElementById("syncButton");
+    const googleButton = document.getElementById("googleButton");
+    const emptySyncAction = document.getElementById("emptySyncAction");
+    const syncModal = document.getElementById("syncModal");
+    const syncAccountSelect = document.getElementById("syncAccountSelect");
+    const cancelSyncModal = document.getElementById("cancelSyncModal");
+    const confirmSyncModal = document.getElementById("confirmSyncModal");
+
+    let modalTrigger = null;
+
+    function cloneApplications() {
+      return SAMPLE_APPLICATIONS.map((item) => ({ ...item }));
+    }
+
+    function getSelectedAccount() {
+      return state.accounts.find((account) => account.id === state.selectedAccountId) ?? state.accounts[0] ?? null;
+    }
+
+    function mockFetchApplications() {
+      return new Promise((resolve) => {
+        window.setTimeout(() => resolve(cloneApplications()), 900);
+      });
+    }
+
+    function parseAppliedDate(value) {
+      const [day, month, year] = value.split("-").map(Number);
+      return new Date(year, month - 1, day).getTime();
+    }
+
+    function getFilteredApplications() {
+      const normalizedQuery = state.searchQuery.trim().toLowerCase();
+      const sorted = [...state.applications].sort((left, right) => {
+        return parseAppliedDate(right.AppliedDate) - parseAppliedDate(left.AppliedDate);
+      });
+
+      if (!normalizedQuery) {
+        return sorted;
+      }
+
+      return sorted.filter((application) => {
+        const haystack = [
+          application.CompanyName,
+          application.JobRole,
+          application.Status,
+          application.AppliedDate
+        ].join(" ").toLowerCase();
+        return haystack.includes(normalizedQuery);
+      });
+    }
+
+    function getPagination(filteredApplications) {
+      const totalPages = Math.max(1, Math.ceil(filteredApplications.length / PAGE_SIZE));
+      const currentPage = Math.min(state.currentPage, totalPages);
+      const startIndex = (currentPage - 1) * PAGE_SIZE;
+      const endIndex = startIndex + PAGE_SIZE;
+
+      return {
+        currentPage,
+        totalPages,
+        startIndex,
+        endIndex,
+        pageItems: filteredApplications.slice(startIndex, endIndex)
+      };
+    }
+
+    function renderApplications(pageItems) {
+      tableBody.innerHTML = "";
+
+      pageItems.forEach((application) => {
+        const row = document.createElement("tr");
+        row.innerHTML = `
+          <td class="company">${application.CompanyName}</td>
+          <td class="role">${application.JobRole}</td>
+          <td><span class="status-pill" data-status="${application.Status}">${application.Status}</span></td>
+          <td class="date">${application.AppliedDate}</td>
+        `;
+        tableBody.appendChild(row);
+      });
+    }
+
+    function updateSummary() {
+      const filteredApplications = getFilteredApplications();
+      const { currentPage, totalPages, startIndex, pageItems } = getPagination(filteredApplications);
+
+      if (state.loading) {
+        applicationSummary.textContent = "Loading the latest applications from your server…";
+        resultCount.textContent = "Loading rows…";
+        return;
+      }
+
+      if (state.applications.length === 0) {
+        applicationSummary.textContent = "The server is connected, but there are no job applications to show yet.";
+        resultCount.textContent = "0 rows";
+        return;
+      }
+
+      if (filteredApplications.length === 0) {
+        applicationSummary.textContent = `${state.applications.length} applications are available, but nothing matches “${state.searchQuery.trim()}”.`;
+        resultCount.textContent = "0 matching rows";
+        return;
+      }
+
+      const totalNoun = state.applications.length === 1 ? "application" : "applications";
+      const filteredNoun = filteredApplications.length === 1 ? "match" : "matches";
+      const start = startIndex + 1;
+      const end = startIndex + pageItems.length;
+
+      if (state.searchQuery.trim()) {
+        applicationSummary.textContent = `${filteredApplications.length} ${filteredNoun} for “${state.searchQuery.trim()}”. Showing ${start}–${end} on page ${currentPage} of ${totalPages}.`;
+      } else {
+        applicationSummary.textContent = `${state.applications.length} ${totalNoun} currently stored on the server. Showing the latest ${start}–${end}.`;
+      }
+
+      resultCount.textContent = `${filteredApplications.length} total rows`;
+    }
+
+    function renderSyncPanel() {
+      syncPanel.classList.toggle("active", state.syncing);
+      syncStage.textContent = state.syncStage;
+      syncPercent.textContent = `${state.syncProgress}%`;
+      progressFill.style.width = `${state.syncProgress}%`;
+      progressCaption.textContent = state.syncCaption;
+      progressStatus.textContent = state.syncing ? "Running" : "Queued";
+    }
+
+    function renderMeta() {
+      accountCount.textContent = String(state.accounts.length);
+      lastSync.textContent = state.lastSyncLabel;
+      statusNote.textContent = state.statusNote;
+      syncButton.disabled = state.loading || state.syncing || state.accounts.length === 0;
+    }
+
+    function renderSyncModal() {
+      syncModal.hidden = !state.syncModalOpen;
+      confirmSyncModal.disabled = state.accounts.length === 0;
+      syncAccountSelect.innerHTML = "";
+
+      state.accounts.forEach((account) => {
+        const option = document.createElement("option");
+        option.value = account.id;
+        option.textContent = account.label;
+        option.selected = account.id === state.selectedAccountId;
+        syncAccountSelect.appendChild(option);
+      });
+    }
+
+    function renderStates() {
+      const filteredApplications = getFilteredApplications();
+      const pagination = getPagination(filteredApplications);
+      state.currentPage = pagination.currentPage;
+
+      const showLoading = state.loading;
+      const showEmpty = !state.loading && state.applications.length === 0;
+      const showTable = !state.loading && filteredApplications.length > 0;
+      const showSearchEmpty = !state.loading && state.applications.length > 0 && filteredApplications.length === 0;
+
+      loadingState.classList.toggle("visually-hidden", !showLoading);
+      emptyState.classList.toggle("visually-hidden", !(showEmpty || showSearchEmpty));
+      tableState.classList.toggle("visually-hidden", !showTable);
+      emptyStateCopy.textContent = showSearchEmpty
+        ? `No applications match “${state.searchQuery.trim()}”. Try a company, role, status, or applied date.`
+        : "The server returned an empty result. Add a Google account or run another sync once new application emails arrive.";
+      emptySyncAction.hidden = showSearchEmpty;
+      renderSyncPanel();
+      renderMeta();
+      renderSyncModal();
+      updateSummary();
+      previousPageButton.disabled = pagination.currentPage === 1;
+      nextPageButton.disabled = pagination.currentPage === pagination.totalPages;
+      const start = filteredApplications.length === 0 ? 0 : pagination.startIndex + 1;
+      const end = filteredApplications.length === 0 ? 0 : pagination.startIndex + pagination.pageItems.length;
+      paginationSummary.textContent = `Showing ${start}–${end} of ${filteredApplications.length}`;
+      pageIndicator.textContent = `Page ${pagination.currentPage} of ${pagination.totalPages}`;
+
+      if (showTable) {
+        renderApplications(pagination.pageItems);
+      }
+    }
+
+    async function loadApplications() {
+      state.loading = true;
+      renderStates();
+
+      const applications = await mockFetchApplications();
+      state.applications = applications;
+      state.currentPage = 1;
+      state.loading = false;
+      renderStates();
+    }
+
+    function timestampLabel() {
+      const formatter = new Intl.DateTimeFormat(undefined, {
+        hour: "numeric",
+        minute: "2-digit"
+      });
+      return `Last sync at ${formatter.format(new Date())}`;
+    }
+
+    function openSyncModal(trigger) {
+      if (state.loading || state.syncing || state.accounts.length === 0) {
+        return;
+      }
+
+      modalTrigger = trigger ?? document.activeElement;
+      const selectedAccount = getSelectedAccount();
+      if (selectedAccount) {
+        state.selectedAccountId = selectedAccount.id;
+      }
+      state.syncModalOpen = true;
+      renderStates();
+      window.requestAnimationFrame(() => syncAccountSelect.focus());
+    }
+
+    function closeSyncModal() {
+      state.syncModalOpen = false;
+      renderStates();
+
+      if (modalTrigger instanceof HTMLElement) {
+        modalTrigger.focus();
+      }
+    }
+
+    async function runSync(accountId) {
+      if (state.syncing) {
+        return;
+      }
+
+      const selectedAccount = state.accounts.find((account) => account.id === accountId) ?? getSelectedAccount();
+      if (!selectedAccount) {
+        return;
+      }
+
+      state.selectedAccountId = selectedAccount.id;
+      state.syncAccountLabel = selectedAccount.label;
+      state.syncing = true;
+      state.syncModalOpen = false;
+      state.syncProgress = 0;
+      state.syncStage = `Preparing ${selectedAccount.label}`;
+      state.syncCaption = "Connecting the selected account to the latest server job feed.";
+      state.statusNote = `Sync started for ${selectedAccount.label}.`;
+      renderStates();
+
+      for (const step of syncStages) {
+        await new Promise((resolve) => {
+          state.syncTimer = window.setTimeout(resolve, 700);
+        });
+        state.syncProgress = step.progress;
+        state.syncStage = `${step.stage} — ${selectedAccount.label}`;
+        state.syncCaption = step.caption;
+        renderStates();
+      }
+
+      state.applications = await mockFetchApplications();
+      state.syncing = false;
+      state.lastSyncLabel = timestampLabel();
+      state.statusNote = `Sync complete — applications refreshed from ${selectedAccount.label}.`;
+      state.currentPage = 1;
+      renderStates();
+    }
+
+    googleButton.addEventListener("click", () => {
+      const nextIndex = state.accounts.length + 1;
+      const newAccount = {
+        id: `account-${nextIndex}`,
+        label: `candidate.${nextIndex}@gmail.com`
+      };
+      state.accounts = [...state.accounts, newAccount];
+      state.selectedAccountId = newAccount.id;
+      state.statusNote = `Google account added. ${state.accounts.length} accounts are ready for the next sync.`;
+      renderStates();
+    });
+
+    syncButton.addEventListener("click", () => openSyncModal(syncButton));
+    emptySyncAction.addEventListener("click", () => openSyncModal(emptySyncAction));
+    cancelSyncModal.addEventListener("click", closeSyncModal);
+    confirmSyncModal.addEventListener("click", () => {
+      state.selectedAccountId = syncAccountSelect.value;
+      runSync(syncAccountSelect.value);
+    });
+    syncAccountSelect.addEventListener("change", (event) => {
+      state.selectedAccountId = event.target.value;
+    });
+    syncModal.addEventListener("click", (event) => {
+      if (event.target === syncModal) {
+        closeSyncModal();
+      }
+    });
+    searchInput.addEventListener("input", (event) => {
+      state.searchQuery = event.target.value;
+      state.currentPage = 1;
+      renderStates();
+    });
+    previousPageButton.addEventListener("click", () => {
+      if (state.currentPage > 1) {
+        state.currentPage -= 1;
+        renderStates();
+      }
+    });
+    nextPageButton.addEventListener("click", () => {
+      const totalPages = Math.max(1, Math.ceil(getFilteredApplications().length / PAGE_SIZE));
+      if (state.currentPage < totalPages) {
+        state.currentPage += 1;
+        renderStates();
+      }
+    });
+    window.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && state.syncModalOpen) {
+        closeSyncModal();
+      }
+    });
+
+    loadApplications();
+  </script>
+</body>
+</html>
