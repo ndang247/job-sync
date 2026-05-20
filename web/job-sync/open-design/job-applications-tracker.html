@@ -35,7 +35,7 @@
     }
 
     body {
-      padding: clamp(18px, 3vw, 48px);
+      padding: clamp(12px, 2vw, 24px);
     }
 
     button,
@@ -50,11 +50,14 @@
     }
 
     .app-shell {
-      width: min(1120px, 100%);
-      margin: 0 auto;
+      width: 100%;
+      min-height: calc(100vh - (clamp(12px, 2vw, 24px) * 2));
+      margin: 0;
       background: color-mix(in oklab, var(--surface) 94%, white);
       border: 1px solid var(--border);
       box-shadow: var(--shadow);
+      display: grid;
+      grid-template-rows: auto 1fr;
     }
 
     .hero {
@@ -175,6 +178,7 @@
       padding: clamp(20px, 3vw, 40px);
       display: grid;
       gap: 20px;
+      align-content: start;
       container-type: inline-size;
       container-name: applications;
     }
@@ -390,6 +394,7 @@
     }
 
     .state-panel {
+      min-height: clamp(420px, 56vh, 760px);
       border: 1px solid var(--border);
       background: var(--surface);
       overflow: hidden;
