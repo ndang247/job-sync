@@ -61,7 +61,7 @@ public partial class GmailService : IEmailService
                 foreach (var msgRef in response.Messages)
                 {
                     var msg = await gmailService.Users.Messages.Get("me", msgRef.Id).ExecuteAsync(cancellationToken);
-                    emails.Add(ParseMessage(msg));
+                    emails.Add(ParseMessage(msgRef.Id, msg));
                 }
             }
 
@@ -108,8 +108,9 @@ public partial class GmailService : IEmailService
         return credential;
     }
 
-    private EmailMessage ParseMessage(Message message)
+    private EmailMessage ParseMessage(string msgRefId, Message message)
     {
+        var id = message.Id ?? msgRefId ?? Guid.NewGuid().ToString();
         var headers = message.Payload?.Headers ?? [];
         var subject = headers.FirstOrDefault(h => h.Name == "Subject")?.Value ?? "";
         var from = headers.FirstOrDefault(h => h.Name == "From")?.Value ?? "";
@@ -125,6 +126,7 @@ public partial class GmailService : IEmailService
 
         return new EmailMessage
         {
+            Id = id,
             Subject = subject,
             From = from,
             Date = DateOnly.FromDateTime(date.DateTime),

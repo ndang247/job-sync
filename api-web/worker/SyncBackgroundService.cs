@@ -78,6 +78,9 @@ public class SyncBackgroundService : BackgroundService
 
             var results = await orchestrator.ExecuteSyncAsync(job.Id, job.EmailConnectionId, progressReporter, cancellationToken);
 
+            // Note: ExecuteSyncAsync persists entities via JobApplicationService, which sets EmailConnectionId
+            // and may cause EF to fixup navigation properties. The serialized Result may include related entities
+            // if they are tracked in the same DbContext scope. This is acceptable as SyncJob.Result is informational.
             job.Result = JsonSerializer.SerializeToDocument(results);
             job.Status = SyncJobStatus.Completed;
             await dbContext.SaveChangesAsync(cancellationToken);

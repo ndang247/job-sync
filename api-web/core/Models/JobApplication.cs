@@ -1,10 +1,24 @@
+using core.Enums;
+
 namespace core.Models;
 
-public class JobApplication
+public sealed class JobApplication
 {
+    public string MessageId { get; set; } = string.Empty;
     public string CompanyName { get; set; } = string.Empty;
     public string JobRole { get; set; } = string.Empty;
     public string AppliedDate { get; set; } = string.Empty;
-    // Default status is "applied", but it can be updated to "interviewing", "offer", "rejected", etc.
+    // Default to "applied"
     public string Status { get; set; } = "applied";
+
+    public Entities.JobApplication ToEntity() => new()
+    {
+        MessageId = MessageId,
+        CompanyName = CompanyName,
+        JobRole = JobRole,
+        AppliedDate = AppliedDate,
+        Status = Enum.TryParse<JobApplicationStatus>(Status, ignoreCase: true, out var parsed)
+            ? parsed
+            : JobApplicationStatus.Applied
+    };
 }

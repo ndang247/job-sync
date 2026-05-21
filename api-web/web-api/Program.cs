@@ -19,6 +19,7 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 builder.Services.AddScoped<IEmailService, GmailService>();
 builder.Services.AddScoped<IAIService, OpenAIService>();
 builder.Services.AddScoped<ISyncOrchestrator, SyncOrchestrator>();
+builder.Services.AddScoped<IJobApplicationService, JobApplicationService>();
 builder.Services.AddScoped<ISyncProgressReporter, SyncProgressReporter>();
 builder.Services.AddScoped<ISyncHubNotifier, SyncHubNotifier>();
 builder.Services.AddScoped<IGoogleTokenExchanger, GoogleTokenExchanger>();

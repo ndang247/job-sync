@@ -1,5 +1,5 @@
 using core.Interfaces;
-using core.Models;
+using core.Entities;
 
 namespace infrastructure.Services;
 
@@ -7,12 +7,14 @@ public class SyncOrchestrator : ISyncOrchestrator
 {
     private readonly IEmailService _emailService;
     private readonly IAIService _aiService;
+    private readonly IJobApplicationService _jobApplicationService;
     private const int BatchSize = 20;
 
-    public SyncOrchestrator(IEmailService emailService, IAIService aiService)
+    public SyncOrchestrator(IEmailService emailService, IAIService aiService, IJobApplicationService jobApplicationService)
     {
         _emailService = emailService;
         _aiService = aiService;
+        _jobApplicationService = jobApplicationService;
     }
 
     public async Task<List<JobApplication>> ExecuteSyncAsync(Guid jobId, Guid emailConnectionId, ISyncProgressReporter progressReporter, CancellationToken cancellationToken = default)
@@ -43,6 +45,8 @@ public class SyncOrchestrator : ISyncOrchestrator
         await progressReporter.ReportProgressAsync(jobId, "Deduplicating results", 90, cancellationToken);
 
         var deduplicated = await _aiService.DeduplicateAsync(allApplications, cancellationToken);
+
+        await _jobApplicationService.AddApplicationsAsync(emailConnectionId, deduplicated, cancellationToken);
 
         await progressReporter.ReportProgressAsync(jobId, "Done", 100, cancellationToken);
 

@@ -1,14 +1,17 @@
 using System.Text.Json;
 using OpenAI.Chat;
 using core.Interfaces;
-using core.Models;
+using core.Entities;
 using Microsoft.Extensions.Configuration;
+using System.Collections.Frozen;
+using Microsoft.Extensions.Logging;
 
 namespace infrastructure.Services;
 
 public class OpenAIService : IAIService
 {
     private readonly IConfiguration _configuration;
+    private readonly ILogger<OpenAIService> _logger;
 
     private static readonly ChatResponseFormat _jsonSchema = ChatResponseFormat.CreateJsonSchemaFormat(
         jsonSchemaFormatName: "job_applications",
@@ -21,12 +24,13 @@ public class OpenAIService : IAIService
                   "items": {
                     "type": "object",
                     "properties": {
-                      "companyName": { "type": "string" },
-                      "jobRole": { "type": "string" },
-                      "appliedDate": { "type": "string" },
-                      "status": { "type": "string" }
+                        "messageId": { "type": "string" },
+                        "companyName": { "type": "string" },
+                        "jobRole": { "type": "string" },
+                        "appliedDate": { "type": "string" },
+                        "status": { "type": "string" }
                     },
-                    "required": ["companyName", "jobRole", "appliedDate", "status"],
+                    "required": ["messageId", "companyName", "jobRole", "appliedDate", "status"],
                     "additionalProperties": false
                   }
                 }
@@ -37,9 +41,10 @@ public class OpenAIService : IAIService
             """),
         jsonSchemaIsStrict: true);
 
-    public OpenAIService(IConfiguration configuration)
+    public OpenAIService(IConfiguration configuration, ILogger<OpenAIService> logger)
     {
         _configuration = configuration;
+        _logger = logger;
     }
 
     public async Task<List<JobApplication>> ClassifyBatchAsync(List<EmailMessage> emails, CancellationToken cancellationToken = default)
@@ -50,12 +55,12 @@ public class OpenAIService : IAIService
         var client = CreateClient();
 
         var emailsText = string.Join("\n---\n", emails.Select(e =>
-            $"Subject: {e.Subject}\nFrom: {e.From}\nDate: {e.Date:dd-MM-yyyy}\nBody: {e.Body[..Math.Min(e.Body.Length, 7000)]}"));
+            $"MessageId: {e.Id}\nSubject: {e.Subject}\nFrom: {e.From}\nDate: {e.Date:dd-MM-yyyy}\nBody: {e.Body[..Math.Min(e.Body.Length, 7000)]}"));
 
         var prompt = $"""
             Given these emails, identify which are job application related.
             For duplicates about the same application (e.g. platform confirmation like Seek.com.au, indeed, etc. + company auto-reply), return only one entry.
-            Return objects containing: companyName, jobRole, appliedDate (use the email date in dd-MM-yyyy format), status (always "applied").
+            Return objects containing: messageId, companyName, jobRole, appliedDate (use the email date in dd-MM-yyyy format), status (always "applied").
             If no emails are job-related, return an empty applications array.
 
             Emails:
@@ -85,9 +90,9 @@ public class OpenAIService : IAIService
         });
 
         var prompt = $"""
-            Given these job application results from multiple batches, deduplicate entries for the same company+role combination.
+            Given these job application results from multiple batches, deduplicate entries for the same messageId and companyName+jobRole combination.
             Keep the earliest appliedDate for duplicates.
-            Return the final consolidated applications with: companyName, jobRole, appliedDate (in dd-MM-yyyy format), status.
+            Return the final consolidated applications with: messageId, companyName, jobRole, appliedDate (in dd-MM-yyyy format), status.
 
             Applications:
             {applicationsJson}
@@ -110,7 +115,7 @@ public class OpenAIService : IAIService
         return new ChatClient(model, apiKey);
     }
 
-    private static List<JobApplication> ParseResponse(string responseText)
+    private List<JobApplication> ParseResponse(string responseText)
     {
         try
         {
@@ -118,16 +123,17 @@ public class OpenAIService : IAIService
             {
                 PropertyNamingPolicy = JsonNamingPolicy.CamelCase
             });
-            return wrapper?.Applications ?? [];
+            return wrapper?.Applications.Select(a => a.ToEntity()).ToList() ?? [];
         }
-        catch (JsonException)
+        catch (JsonException ex)
         {
-            return [];
+            _logger.LogError(ex, "Failed to parse AI response: {ResponseText} --- {ExMessage}", responseText, ex.Message);
+            throw new InvalidOperationException("Failed to parse AI response. " + ex.Message);
         }
     }
 
     private sealed class ApplicationsWrapper
     {
-        public List<JobApplication> Applications { get; set; } = [];
+        public List<core.Models.JobApplication> Applications { get; set; } = [];
     }
 }

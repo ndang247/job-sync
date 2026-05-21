@@ -3,7 +3,6 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using core.Entities;
 using core.Enums;
-using core.Models;
 using NSubstitute;
 
 namespace web_api.IntegrationTests.Controllers;
@@ -314,8 +313,8 @@ public class SyncControllerTests : IClassFixture<CustomWebApplicationFactory>
         var (userId, connId) = await SeedUserWithConnectionAsync();
         var applications = new List<JobApplication>
         {
-            new() { CompanyName = "Acme Corp", JobRole = "Engineer", AppliedDate = "10-05-2026", Status = "applied" },
-            new() { CompanyName = "Globex", JobRole = "Dev", AppliedDate = "09-05-2026", Status = "applied" }
+            new() { CompanyName = "Acme Corp", JobRole = "Engineer", AppliedDate = "10-05-2026", Status = JobApplicationStatus.Applied },
+            new() { CompanyName = "Globex", JobRole = "Dev", AppliedDate = "09-05-2026", Status = JobApplicationStatus.Applied }
         };
 
         using (var db = _factory.CreateDbContext())

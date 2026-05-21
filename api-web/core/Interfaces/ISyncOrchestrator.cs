@@ -1,4 +1,4 @@
-using core.Models;
+using core.Entities;
 
 namespace core.Interfaces;
 
