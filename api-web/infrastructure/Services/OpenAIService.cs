@@ -55,24 +55,53 @@ public class OpenAIService : IAIService
         var client = CreateClient();
 
         var emailsText = string.Join("\n---\n", emails.Select(e =>
-            $"MessageId: {e.Id}\nSubject: {e.Subject}\nFrom: {e.From}\nDate: {e.Date:dd-MM-yyyy}\nBody: {e.Body[..Math.Min(e.Body.Length, 7000)]}"));
+            $"MessageId: {e.Id}\nSubject: {e.Subject}\nFrom: {e.From}\nDate: {e.Date:dd-MM-yyyy}\nBody: {e.Body}"));
 
         var prompt = $"""
-            Given these emails, identify which are job APPLICATION CONFIRMATION or APPLYING for a job emails only.
-            Include ONLY emails that confirm a job application was submitted or intention is related to applying for a job (e.g. "Your application has been received", "Thanks for applying", "Application submitted successfully", etc.).
-            IGNORE and EXCLUDE these types of emails:
-            - Rejection emails or intention is related to job application rejection ("Unfortunately", "We regret", "not moving forward", "position has been filled", etc.)
-            - Role closing notifications ("role has been closed", "position is no longer available", "listing has expired", etc.)
-            - Interview invitations or scheduling
-            - Job alerts or recommendations
-            - Follow-ups or status updates that are not the initial application confirmation
-            Also SKIP any email where the specific company name cannot be determined from the email content. The job role alone is not enough — the company must be identifiable.
-            If the role cannot be determined, but company is identifiable, use "Unknown" as the jobRole.
-            For duplicates about the same application (e.g. platform confirmation like Seek.com.au, indeed, etc. + company auto-reply), return only one entry.
+            You are classifying recruitment emails.
+
+            Your task is to extract ONLY initial job application confirmation emails.
+
+            IMPORTANT: First determine whether the email is a rejection, unsuccessful outcome, role closure, interview invite, job alert, recommendation, or later-stage status update. If yes, EXCLUDE it immediately, even if it also mentions an application, role, company, or says "thank you for your interest".
+
+            An email is an application confirmation ONLY if it confirms that the candidate has just submitted/applied for a job, such as:
+            - "Your application has been received"
+            - "Thank you for applying"
+            - "Application submitted successfully"
+            - "We received your application"
+            - "Thanks for your application"
+
+            EXCLUDE emails containing rejection or unsuccessful outcome language, including but not limited to:
+            - "After careful consideration"
+            - "we've decided not to move forward"
+            - "not move forward with your candidacy"
+            - "unfortunately"
+            - "we regret"
+            - "position has been filled"
+            - "role has been closed"
+            - "no longer available"
+            - "unsuccessful"
+            - "not selected"
+
+            If an email contains both application-related words and rejection/outcome words, rejection/outcome words win and the email must be excluded.
+
+            Also exclude:
+            - interview invitations or scheduling
+            - job alerts or recommendations
+            - follow-ups or status updates
+            - role closing notifications
+            - emails where the company cannot be determined
+
+            If the role cannot be determined but the company is identifiable, use "Unknown" as the jobRole.
+            For duplicates about the same application (e.g. platform confirmation + company auto-reply), return only one entry.
+
             Return objects containing: messageId, companyName, jobRole, appliedDate (use the email date in dd-MM-yyyy format), status (always "applied").
-            If no emails are application confirmations, return an empty applications array.
+            If there are no initial application confirmation emails, return an empty applications array.
 
             Emails:
+            
+            ---
+
             {emailsText}
             """;
 
