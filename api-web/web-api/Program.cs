@@ -37,9 +37,12 @@ builder.Services.AddHostedService<SyncBackgroundService>();
 
 builder.Services.AddCors(options =>
 {
-    options.AddDefaultPolicy(policy =>
+    options.AddPolicy("SignalRCors", policy =>
     {
-        policy.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader();
+        policy.WithOrigins(builder.Configuration["FrontendUrl"] ?? "http://localhost:4200")
+              .AllowAnyHeader()
+              .AllowAnyMethod()
+              .AllowCredentials();
     });
 });
 
@@ -51,7 +54,7 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-app.UseCors();
+app.UseCors("SignalRCors");
 app.UseSession();
 app.MapControllers();
 app.MapHub<SyncHub>("/hubs/sync");

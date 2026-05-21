@@ -24,14 +24,12 @@ public class SyncController : ControllerBase
     [HttpPost]
     public async Task<IActionResult> StartSync([FromBody] StartSyncRequest request)
     {
-        var userExists = await _dbContext.Users.AnyAsync(u => u.Id == request.UserId);
-        if (!userExists)
-            return BadRequest(new { error = "User not found" });
-
         var connection = await _dbContext.EmailConnections
-            .FirstOrDefaultAsync(ec => ec.Id == request.EmailConnectionId);
+            .Where(ec => ec.Id == request.EmailConnectionId)
+            .Select(ec => new { ec.UserId, ec.Status })
+            .FirstOrDefaultAsync();
 
-        if (connection is null || connection.UserId != request.UserId)
+        if (connection is null || connection.UserId == Guid.Empty)
             return Conflict(new { code = "CONNECTION_REQUIRES_GRANT", error = "Email connection requires grant/reconnect." });
 
         if (connection.Status != EmailConnectionStatus.Active)
@@ -46,7 +44,7 @@ public class SyncController : ControllerBase
         var job = new SyncJob
         {
             Id = Guid.NewGuid(),
-            UserId = request.UserId,
+            UserId = connection.UserId,
             EmailConnectionId = request.EmailConnectionId,
             Status = SyncJobStatus.Pending
         };

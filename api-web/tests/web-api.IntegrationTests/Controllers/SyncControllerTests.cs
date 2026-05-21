@@ -21,9 +21,9 @@ public class SyncControllerTests : IClassFixture<CustomWebApplicationFactory>
     [Fact]
     public async Task StartSync_ValidConnection_ReturnsOkWithJobId()
     {
-        var (userId, connId) = await SeedUserWithConnectionAsync();
+        var (_, connId) = await SeedUserWithConnectionAsync();
 
-        var response = await _client.PostAsJsonAsync("/api/v1/sync", new { userId, emailConnectionId = connId });
+        var response = await _client.PostAsJsonAsync("/api/v1/sync", new { emailConnectionId = connId });
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
@@ -38,7 +38,7 @@ public class SyncControllerTests : IClassFixture<CustomWebApplicationFactory>
     {
         var (userId, connId) = await SeedUserWithConnectionAsync();
 
-        var response = await _client.PostAsJsonAsync("/api/v1/sync", new { userId, emailConnectionId = connId });
+        var response = await _client.PostAsJsonAsync("/api/v1/sync", new { emailConnectionId = connId });
         var content = await response.Content.ReadFromJsonAsync<JsonElement>();
         var jobId = Guid.Parse(content.GetProperty("jobId").GetString()!);
 
@@ -53,9 +53,9 @@ public class SyncControllerTests : IClassFixture<CustomWebApplicationFactory>
     [Fact]
     public async Task StartSync_ValidConnection_WritesToChannel()
     {
-        var (userId, connId) = await SeedUserWithConnectionAsync();
+        var (_, connId) = await SeedUserWithConnectionAsync();
 
-        var response = await _client.PostAsJsonAsync("/api/v1/sync", new { userId, emailConnectionId = connId });
+        var response = await _client.PostAsJsonAsync("/api/v1/sync", new { emailConnectionId = connId });
         var content = await response.Content.ReadFromJsonAsync<JsonElement>();
         var jobId = Guid.Parse(content.GetProperty("jobId").GetString()!);
 
@@ -64,29 +64,9 @@ public class SyncControllerTests : IClassFixture<CustomWebApplicationFactory>
     }
 
     [Fact]
-    public async Task StartSync_NonExistentUser_ReturnsBadRequest()
-    {
-        var response = await _client.PostAsJsonAsync("/api/v1/sync", new { userId = Guid.NewGuid(), emailConnectionId = Guid.NewGuid() });
-
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-
-        var content = await response.Content.ReadFromJsonAsync<JsonElement>();
-        Assert.Equal("User not found", content.GetProperty("error").GetString());
-    }
-
-    [Fact]
     public async Task StartSync_NoConnection_ReturnsConflictWithGrantCode()
     {
-        Guid userId;
-        using (var db = _factory.CreateDbContext())
-        {
-            var user = new User { Id = Guid.NewGuid(), FirstName = "Test", LastName = "User" };
-            db.Users.Add(user);
-            await db.SaveChangesAsync();
-            userId = user.Id;
-        }
-
-        var response = await _client.PostAsJsonAsync("/api/v1/sync", new { userId, emailConnectionId = Guid.NewGuid() });
+        var response = await _client.PostAsJsonAsync("/api/v1/sync", new { emailConnectionId = Guid.NewGuid() });
 
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
 
@@ -95,21 +75,27 @@ public class SyncControllerTests : IClassFixture<CustomWebApplicationFactory>
     }
 
     [Fact]
-    public async Task StartSync_ConnectionNotOwnedByUser_ReturnsConflict()
+    public async Task StartSync_ConnectionWithEmptyUserId_ReturnsConflict()
     {
-        var (_, connId) = await SeedUserWithConnectionAsync();
-
-        // Create different user
-        Guid otherUserId;
+        Guid connId;
         using (var db = _factory.CreateDbContext())
         {
-            var other = new User { Id = Guid.NewGuid(), FirstName = "Other", LastName = "Person" };
-            db.Users.Add(other);
+            var conn = new EmailConnection
+            {
+                Id = Guid.NewGuid(),
+                UserId = Guid.Empty,
+                Email = "orphan@gmail.com",
+                SubjectId = $"sub-orphan-{Guid.NewGuid()}",
+                RefreshToken = "rt",
+                GrantedScopes = "gmail.readonly",
+                Status = EmailConnectionStatus.Active
+            };
+            db.EmailConnections.Add(conn);
             await db.SaveChangesAsync();
-            otherUserId = other.Id;
+            connId = conn.Id;
         }
 
-        var response = await _client.PostAsJsonAsync("/api/v1/sync", new { userId = otherUserId, emailConnectionId = connId });
+        var response = await _client.PostAsJsonAsync("/api/v1/sync", new { emailConnectionId = connId });
 
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
 
@@ -142,7 +128,7 @@ public class SyncControllerTests : IClassFixture<CustomWebApplicationFactory>
             connId = conn.Id;
         }
 
-        var response = await _client.PostAsJsonAsync("/api/v1/sync", new { userId, emailConnectionId = connId });
+        var response = await _client.PostAsJsonAsync("/api/v1/sync", new { emailConnectionId = connId });
 
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
 
@@ -167,7 +153,7 @@ public class SyncControllerTests : IClassFixture<CustomWebApplicationFactory>
             await db.SaveChangesAsync();
         }
 
-        var response = await _client.PostAsJsonAsync("/api/v1/sync", new { userId, emailConnectionId = connId });
+        var response = await _client.PostAsJsonAsync("/api/v1/sync", new { emailConnectionId = connId });
 
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
 
@@ -192,7 +178,7 @@ public class SyncControllerTests : IClassFixture<CustomWebApplicationFactory>
             await db.SaveChangesAsync();
         }
 
-        var response = await _client.PostAsJsonAsync("/api/v1/sync", new { userId, emailConnectionId = connId });
+        var response = await _client.PostAsJsonAsync("/api/v1/sync", new { emailConnectionId = connId });
 
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
     }
@@ -214,7 +200,7 @@ public class SyncControllerTests : IClassFixture<CustomWebApplicationFactory>
             await db.SaveChangesAsync();
         }
 
-        var response = await _client.PostAsJsonAsync("/api/v1/sync", new { userId, emailConnectionId = connId });
+        var response = await _client.PostAsJsonAsync("/api/v1/sync", new { emailConnectionId = connId });
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
@@ -237,7 +223,7 @@ public class SyncControllerTests : IClassFixture<CustomWebApplicationFactory>
             await db.SaveChangesAsync();
         }
 
-        var response = await _client.PostAsJsonAsync("/api/v1/sync", new { userId, emailConnectionId = connId });
+        var response = await _client.PostAsJsonAsync("/api/v1/sync", new { emailConnectionId = connId });
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
@@ -267,11 +253,11 @@ public class SyncControllerTests : IClassFixture<CustomWebApplicationFactory>
         }
 
         // Start sync for first connection
-        var response1 = await _client.PostAsJsonAsync("/api/v1/sync", new { userId, emailConnectionId = connId1 });
+        var response1 = await _client.PostAsJsonAsync("/api/v1/sync", new { emailConnectionId = connId1 });
         Assert.Equal(HttpStatusCode.OK, response1.StatusCode);
 
         // Start sync for second connection (should also succeed)
-        var response2 = await _client.PostAsJsonAsync("/api/v1/sync", new { userId, emailConnectionId = connId2 });
+        var response2 = await _client.PostAsJsonAsync("/api/v1/sync", new { emailConnectionId = connId2 });
         Assert.Equal(HttpStatusCode.OK, response2.StatusCode);
     }
 
