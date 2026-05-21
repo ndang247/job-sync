@@ -1,0 +1,112 @@
+<div class="section-head">
+  <div>
+    <h2>Applications from the server</h2>
+    <p>{{ summary() }}</p>
+  </div>
+</div>
+
+<div class="data-shell">
+  <div class="toolbar">
+    <div class="search-field">
+      <label class="field-label" for="searchInput">Search applications</label>
+      <input
+        class="search-input"
+        id="searchInput"
+        type="search"
+        placeholder="Search by company, role, status, or date"
+        autocomplete="off"
+        [value]="service.searchQuery()"
+        (input)="onSearch($event)"
+      />
+    </div>
+    <div class="toolbar-meta">
+      <span>{{ resultCountText() }}</span>
+      <span>10 per page</span>
+    </div>
+  </div>
+
+  <section class="state-panel" aria-live="polite">
+    @if (showLoading()) {
+      <div class="loading-state">
+        <h3>Loading your applications</h3>
+        <p>
+          The interface is pulling the latest rows from the server and preparing the candidate view.
+        </p>
+        <div class="skeleton-list" aria-hidden="true">
+          <div class="skeleton-row"></div>
+          <div class="skeleton-row"></div>
+          <div class="skeleton-row"></div>
+        </div>
+      </div>
+    } @else if (showEmpty() || showSearchEmpty()) {
+      <div class="empty-state">
+        @if (showSearchEmpty()) {
+          <h3>No matching applications</h3>
+          <p>
+            No applications match "{{ service.searchQuery().trim() }}". Try a company, role, status,
+            or applied date.
+          </p>
+        } @else {
+          <h3>No applications yet</h3>
+          <p>
+            The server returned an empty result. Add a Google account or run another sync once new
+            application emails arrive.
+          </p>
+          <button class="inline-link" type="button" (click)="onSyncAgain()">Run sync again</button>
+        }
+      </div>
+    } @else if (showTable()) {
+      <div class="table-wrap">
+        <table class="applications-table">
+          <thead>
+            <tr>
+              <th scope="col">Company name</th>
+              <th scope="col">Role</th>
+              <th scope="col">Status</th>
+              <th scope="col">Applied date</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (app of service.pageItems(); track app.companyName + app.appliedDate) {
+              <tr>
+                <td class="company">{{ app.companyName }}</td>
+                <td class="role">{{ app.jobRole }}</td>
+                <td>
+                  <span class="status-pill" [attr.data-status]="app.status">{{ app.status }}</span>
+                </td>
+                <td class="date">{{ app.appliedDate }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+      <div class="pagination">
+        <div class="pagination-summary">
+          Showing {{ service.paginationStart() }}–{{ service.paginationEnd() }} of
+          {{ service.filteredApplications().length }}
+        </div>
+        <div class="pagination-actions">
+          <button
+            class="button"
+            type="button"
+            [disabled]="service.safePage() === 1"
+            (click)="onPrevious()"
+          >
+            Previous
+          </button>
+          <span class="page-indicator"
+            >Page {{ service.safePage() }} of {{ service.totalPages() }}</span
+          >
+          <button
+            class="button"
+            type="button"
+            [disabled]="service.safePage() === service.totalPages()"
+            (click)="onNext()"
+          >
+            Next
+          </button>
+        </div>
+      </div>
+    }
+  </section>
+</div>

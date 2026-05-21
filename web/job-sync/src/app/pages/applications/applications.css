@@ -1,0 +1,19 @@
+.app-shell {
+  width: 100%;
+  min-height: calc(100vh - (clamp(12px, 2vw, 24px) * 2));
+  margin: 0;
+  background: color-mix(in oklab, var(--surface) 94%, white);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  display: grid;
+  grid-template-rows: auto 1fr;
+}
+
+.content {
+  padding: clamp(20px, 3vw, 40px);
+  display: grid;
+  gap: var(--spacing-md);
+  align-content: start;
+  container-type: inline-size;
+  container-name: applications;
+}

@@ -1,0 +1,20 @@
+@if (service.syncState().syncing) {
+  <div class="sync-panel" aria-live="polite">
+    <div class="sync-head">
+      <div>
+        <h2 class="sync-title">Syncing applications</h2>
+        <p class="sync-stage">{{ service.syncState().stage }}</p>
+      </div>
+      <strong>{{ service.syncState().progress }}%</strong>
+    </div>
+    <div class="sync-progress">
+      <div class="progress-track" aria-hidden="true">
+        <div class="progress-fill" [style.width.%]="service.syncState().progress"></div>
+      </div>
+      <div class="progress-meta">
+        <span>{{ service.syncState().caption }}</span>
+        <span>Running</span>
+      </div>
+    </div>
+  </div>
+}

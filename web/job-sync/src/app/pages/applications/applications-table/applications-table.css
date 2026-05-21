@@ -1,0 +1,318 @@
+:host {
+  display: block;
+}
+
+.section-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  justify-content: space-between;
+  align-items: end;
+}
+
+.section-head h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(1.6rem, 2.2vw, 2.2rem);
+  font-weight: 400;
+  line-height: 1;
+}
+
+.section-head p {
+  margin: 0;
+  color: var(--muted);
+  max-width: 42rem;
+  line-height: 1.6;
+}
+
+.data-shell {
+  display: grid;
+  gap: 14px;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.search-field {
+  flex: 1 1 320px;
+  display: grid;
+  gap: 8px;
+}
+
+.field-label {
+  font: 600 0.6875rem/1.2 var(--font-mono);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.search-input {
+  min-height: 48px;
+  width: 100%;
+  padding: 0 14px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--fg);
+}
+
+.search-input::placeholder {
+  color: var(--muted);
+}
+
+.search-input:focus-visible {
+  outline: 2px solid color-mix(in oklab, var(--accent) 55%, white);
+  outline-offset: 2px;
+}
+
+.toolbar-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 18px;
+  align-items: center;
+  color: var(--muted);
+  font-size: 0.94rem;
+}
+
+.state-panel {
+  min-height: clamp(420px, 56vh, 760px);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.loading-state,
+.empty-state {
+  padding: clamp(28px, 6vw, 72px);
+  display: grid;
+  gap: 16px;
+  justify-items: start;
+}
+
+.loading-state h3,
+.empty-state h3 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: clamp(1.8rem, 3vw, 2.6rem);
+  line-height: 1;
+}
+
+.loading-state p,
+.empty-state p {
+  margin: 0;
+  max-width: 36rem;
+  line-height: 1.7;
+  color: var(--muted);
+  text-wrap: pretty;
+}
+
+.skeleton-list {
+  width: 100%;
+  display: grid;
+  gap: 12px;
+  margin-top: 4px;
+}
+
+.skeleton-row {
+  height: 72px;
+  border: 1px solid var(--border);
+  background:
+    linear-gradient(
+      90deg,
+      color-mix(in oklab, var(--surface) 86%, var(--bg)) 0%,
+      color-mix(in oklab, var(--surface) 94%, white) 50%,
+      color-mix(in oklab, var(--surface) 86%, var(--bg)) 100%
+    );
+  background-size: 220% 100%;
+  animation: shimmer 1.3s linear infinite;
+}
+
+.inline-link {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
+.table-wrap {
+  overflow-x: auto;
+}
+
+.applications-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 720px;
+}
+
+.applications-table thead th {
+  padding: 16px 22px;
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
+  font: 600 0.6875rem/1.2 var(--font-mono);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  text-align: left;
+  background: color-mix(in oklab, var(--bg) 38%, var(--surface));
+}
+
+.applications-table tbody td {
+  padding: 18px 22px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+
+.applications-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.applications-table tbody tr:hover {
+  background: color-mix(in oklab, var(--accent) 3%, var(--surface));
+}
+
+.company {
+  font-weight: 600;
+  font-size: 1.02rem;
+  line-height: 1.4;
+}
+
+.role {
+  color: var(--fg);
+  line-height: 1.6;
+  text-wrap: pretty;
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 0 11px;
+  border: 1px solid color-mix(in oklab, var(--accent) 25%, var(--border));
+  background: color-mix(in oklab, var(--accent) 7%, var(--surface));
+  text-transform: capitalize;
+  font-size: 0.92rem;
+  white-space: nowrap;
+}
+
+.status-pill[data-status="interviewing"] {
+  background: color-mix(in oklab, var(--accent) 12%, var(--surface));
+}
+
+.status-pill[data-status="offer"] {
+  border-color: color-mix(in oklab, var(--success) 28%, var(--border));
+  background: color-mix(in oklab, var(--success) 11%, var(--surface));
+}
+
+.status-pill[data-status="rejected"] {
+  border-color: color-mix(in oklab, oklch(54% 0.18 25) 24%, var(--border));
+  background: color-mix(in oklab, oklch(54% 0.18 25) 9%, var(--surface));
+}
+
+.status-pill[data-status="reviewing"] {
+  border-color: color-mix(in oklab, oklch(58% 0.09 85) 28%, var(--border));
+  background: color-mix(in oklab, oklch(58% 0.09 85) 10%, var(--surface));
+}
+
+.date {
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.pagination {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 22px;
+  border-top: 1px solid var(--border);
+  background: color-mix(in oklab, var(--bg) 28%, var(--surface));
+}
+
+.pagination-summary {
+  color: var(--muted);
+  font-size: 0.94rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.pagination-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.page-indicator {
+  min-width: 90px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.94rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.button {
+  min-height: 44px;
+  padding: 0 18px;
+  border: 1px solid var(--fg);
+  background: transparent;
+  color: var(--fg);
+  transition: transform 180ms ease, background-color 180ms ease, color 180ms ease, border-color 180ms ease;
+}
+
+.button:hover:not(:disabled),
+.button:focus-visible:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.button:focus-visible {
+  outline: 2px solid color-mix(in oklab, var(--accent) 55%, white);
+  outline-offset: 3px;
+}
+
+.button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+@keyframes shimmer {
+  from { background-position: 0% 50%; }
+  to { background-position: 120% 50%; }
+}
+
+@container applications (max-width: 740px) {
+  .toolbar {
+    align-items: stretch;
+  }
+
+  .toolbar-meta {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .pagination,
+  .pagination-actions {
+    align-items: stretch;
+  }
+
+  .pagination {
+    padding: 16px;
+  }
+
+  .page-indicator,
+  .pagination-actions .button {
+    width: 100%;
+  }
+}
+
+@media (max-width: 520px) {
+  .toolbar-meta {
+    gap: 8px;
+  }
+}

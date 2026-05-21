@@ -1,0 +1,59 @@
+:host {
+  display: block;
+}
+
+.sync-panel {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  border: 1px solid color-mix(in oklab, var(--accent) 24%, var(--border));
+  background: color-mix(in oklab, var(--accent) 8%, var(--surface));
+}
+
+.sync-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.sync-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(1.2rem, 2vw, 1.55rem);
+  font-weight: 400;
+}
+
+.sync-stage {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.98rem;
+}
+
+.sync-progress {
+  display: grid;
+  gap: 10px;
+}
+
+.progress-track {
+  height: 10px;
+  border: 1px solid color-mix(in oklab, var(--accent) 30%, var(--border));
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, color-mix(in oklab, var(--accent) 84%, black), var(--accent));
+  transition: width 320ms ease;
+}
+
+.progress-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 0.92rem;
+  font-variant-numeric: tabular-nums;
+}

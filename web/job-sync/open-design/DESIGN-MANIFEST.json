@@ -4,6 +4,7 @@
   "entryFile": "job-applications-tracker.html",
   "sourceFiles": {
     "all": [
+      "DESIGN.md",
       "job-applications-tracker.html"
     ],
     "html": [
@@ -11,7 +12,9 @@
     ],
     "css": [],
     "scriptsAndComponents": [],
-    "assets": []
+    "assets": [
+      "DESIGN.md"
+    ]
   },
   "screens": [
     {

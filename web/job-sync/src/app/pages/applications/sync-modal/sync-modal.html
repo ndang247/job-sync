@@ -1,0 +1,44 @@
+@if (service.syncModalOpen()) {
+  <div class="modal-overlay" (click)="onOverlayClick($event)">
+    <div
+      class="modal-card"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="syncModalTitle"
+      aria-describedby="syncModalDescription"
+    >
+      <div class="field-group">
+        <h3 id="syncModalTitle">Choose an account to sync.</h3>
+        <p id="syncModalDescription">
+          Select the Google connection you want to scan before the staged sync begins.
+        </p>
+      </div>
+      <div class="field-group">
+        <label class="field-label" for="syncAccountSelect">Connected account</label>
+        <select
+          class="select-input"
+          id="syncAccountSelect"
+          #accountSelect
+          (change)="onAccountChange($event)"
+        >
+          @for (account of service.accounts(); track account.id) {
+            <option [value]="account.id" [selected]="account.id === service.selectedAccountId()">
+              {{ account.label }}
+            </option>
+          }
+        </select>
+      </div>
+      <div class="modal-actions">
+        <button class="button" type="button" (click)="onCancel()">Cancel</button>
+        <button
+          class="button button-primary"
+          type="button"
+          [disabled]="service.accounts().length === 0"
+          (click)="onConfirm()"
+        >
+          Start sync
+        </button>
+      </div>
+    </div>
+  </div>
+}

@@ -14,7 +14,7 @@ This archive is the source of truth for turning the design into production code.
 - HTML screens detected: 1
 - Stylesheets detected: 0
 - Script/component files detected: 0
-- Supporting assets detected: 0
+- Supporting assets detected: 1
 
 ## Responsive contract
 Validate the implementation across this 2025–2026 viewport matrix:
@@ -50,7 +50,7 @@ For responsive web exports, treat these as a modern breakpoint system for one ad
 ## Color and brand contract
 - Use the exported design tokens and product/domain context as the color source of truth.
 - Do not introduce warm beige / cream / peach / pink / orange-brown background washes unless they are already explicit brand/reference colors in the export.
-- No obvious token stylesheet was detected; sample colors from the entry file and convert them into named tokens before coding.
+- A stylesheet or design/token file was detected; inspect it for canonical color variables before choosing framework theme tokens.
 
 ## Implementation sequence for AI coding tools
 1. Open `job-applications-tracker.html` and `DESIGN-MANIFEST.json`; identify every screen file, launcher/overview file, app module, and interaction before coding.
@@ -72,7 +72,7 @@ For responsive web exports, treat these as a modern breakpoint system for one ad
 - None detected
 
 ## Assets and supporting files
-- None detected
+- `DESIGN.md`
 
 ## Coding checklist for AI tools
 1. Inspect `job-applications-tracker.html` and `DESIGN-MANIFEST.json` first and identify reusable components before coding.

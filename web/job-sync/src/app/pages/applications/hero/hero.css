@@ -1,0 +1,145 @@
+:host {
+  display: block;
+}
+
+.hero {
+  padding: clamp(24px, 4vw, 48px);
+  display: grid;
+  gap: var(--spacing-md);
+  border-bottom: 1px solid var(--border);
+}
+
+.eyebrow {
+  margin: 0;
+  font: 600 0.6875rem/1.2 var(--font-mono);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.hero-grid {
+  display: grid;
+  gap: var(--spacing-md);
+  grid-template-columns: minmax(0, 1.35fr) minmax(300px, 0.9fr);
+  align-items: end;
+}
+
+.hero h1 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(2.4rem, 4vw, 4.5rem);
+  font-weight: 400;
+  line-height: 0.95;
+  letter-spacing: -0.03em;
+  text-wrap: pretty;
+  max-width: 11ch;
+}
+
+.hero p {
+  margin: 0;
+  max-width: 34rem;
+  color: var(--muted);
+  font-size: clamp(1rem, 1.5vw, 1.1rem);
+  line-height: 1.65;
+  text-wrap: pretty;
+}
+
+.hero-side {
+  display: grid;
+  gap: 18px;
+  justify-items: start;
+}
+
+.action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+}
+
+.button {
+  min-height: 44px;
+  padding: 0 18px;
+  border: 1px solid var(--fg);
+  background: transparent;
+  color: var(--fg);
+  transition: transform 180ms ease, background-color 180ms ease, color 180ms ease, border-color 180ms ease;
+}
+
+.button:hover:not(:disabled),
+.button:focus-visible:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.button:focus-visible {
+  outline: 2px solid color-mix(in oklab, var(--accent) 55%, white);
+  outline-offset: 3px;
+}
+
+.button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+.button-primary {
+  background: var(--fg);
+  color: var(--surface);
+  border-color: var(--fg);
+}
+
+.button-primary:hover:not(:disabled),
+.button-primary:focus-visible:not(:disabled) {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--surface);
+}
+
+.hero-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 18px;
+  align-items: center;
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
+.meta-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  color: var(--fg);
+  background: var(--surface);
+}
+
+.meta-pill strong {
+  font-weight: 600;
+}
+
+.status-note {
+  min-height: 22px;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+@media (max-width: 900px) {
+  .hero-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 520px) {
+  .hero {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  .button {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .action-row {
+    width: 100%;
+  }
+}
