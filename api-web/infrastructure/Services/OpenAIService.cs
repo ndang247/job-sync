@@ -58,10 +58,19 @@ public class OpenAIService : IAIService
             $"MessageId: {e.Id}\nSubject: {e.Subject}\nFrom: {e.From}\nDate: {e.Date:dd-MM-yyyy}\nBody: {e.Body[..Math.Min(e.Body.Length, 7000)]}"));
 
         var prompt = $"""
-            Given these emails, identify which are job application related.
+            Given these emails, identify which are job APPLICATION CONFIRMATION or APPLYING for a job emails only.
+            Include ONLY emails that confirm a job application was submitted or intention is related to applying for a job (e.g. "Your application has been received", "Thanks for applying", "Application submitted successfully", etc.).
+            IGNORE and EXCLUDE these types of emails:
+            - Rejection emails or intention is related to job application rejection ("Unfortunately", "We regret", "not moving forward", "position has been filled", etc.)
+            - Role closing notifications ("role has been closed", "position is no longer available", "listing has expired", etc.)
+            - Interview invitations or scheduling
+            - Job alerts or recommendations
+            - Follow-ups or status updates that are not the initial application confirmation
+            Also SKIP any email where the specific company name cannot be determined from the email content. The job role alone is not enough — the company must be identifiable.
+            If the role cannot be determined, but company is identifiable, use "Unknown" as the jobRole.
             For duplicates about the same application (e.g. platform confirmation like Seek.com.au, indeed, etc. + company auto-reply), return only one entry.
             Return objects containing: messageId, companyName, jobRole, appliedDate (use the email date in dd-MM-yyyy format), status (always "applied").
-            If no emails are job-related, return an empty applications array.
+            If no emails are application confirmations, return an empty applications array.
 
             Emails:
             {emailsText}
