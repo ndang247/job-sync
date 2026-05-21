@@ -1,10 +1,13 @@
 import { computed, inject, Injectable, signal } from '@angular/core';
 import { DOCUMENT } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
+import * as signalR from '@microsoft/signalr';
+import { StorageService } from './storage/storage';
 
 export interface JobApplication {
   companyName: string;
   jobRole: string;
+  email: string;
   status: 'applied';
   appliedDate: string;
 }
@@ -29,6 +32,7 @@ function parseAppliedDate(value: string): number {
 }
 
 const API_BASE_URL = 'http://localhost:5084';
+const LAST_SYNC_KEY = 'lastSyncTimestamp';
 
 @Injectable({
   providedIn: 'root',
@@ -36,13 +40,14 @@ const API_BASE_URL = 'http://localhost:5084';
 export class ApplicationsService {
   private readonly document = inject(DOCUMENT);
   private readonly http = inject(HttpClient);
+  private readonly storage = inject(StorageService);
 
   readonly applications = signal<JobApplication[]>([]);
   readonly loading = signal(true);
   readonly searchQuery = signal('');
   readonly currentPage = signal(1);
   readonly accounts = signal<GoogleAccount[]>([]);
-  readonly lastSyncLabel = signal('Last sync just now');
+  readonly lastSyncLabel = signal(this.getStoredSyncLabel());
   readonly statusNote = signal('');
   readonly syncState = signal<SyncState>({ syncing: false, progress: 0, stage: '', caption: '' });
   readonly syncModalOpen = signal(false);
@@ -55,7 +60,7 @@ export class ApplicationsService {
     );
     if (!query) return sorted;
     return sorted.filter((app) => {
-      const haystack = [app.companyName, app.jobRole, app.status, app.appliedDate]
+      const haystack = [app.companyName, app.jobRole, app.email, app.status, app.appliedDate]
         .join(' ')
         .toLowerCase();
       return haystack.includes(query);
@@ -87,7 +92,13 @@ export class ApplicationsService {
     this.loading.set(true);
     this.http
       .get<
-        { companyName: string; jobRole: string; appliedDate: string; status: string }[]
+        {
+          companyName: string;
+          jobRole: string;
+          email: string;
+          appliedDate: string;
+          status: string;
+        }[]
       >(`${API_BASE_URL}/api/v1/applications`)
       .subscribe({
         next: (applications) => {
@@ -95,6 +106,7 @@ export class ApplicationsService {
             applications.map((application) => ({
               companyName: application.companyName,
               jobRole: application.jobRole,
+              email: application.email,
               appliedDate: application.appliedDate,
               status: application.status.toLowerCase() as JobApplication['status'],
             })),
@@ -142,19 +154,74 @@ export class ApplicationsService {
       syncing: true,
       progress: 0,
       stage: `Preparing ${account.label}`,
-      caption: 'Connecting the selected account to the latest server job feed.',
+      caption: 'Initiating sync job on the server.',
     });
     this.statusNote.set(`Sync started for ${account.label}.`);
 
-    // TODO: replace with real SignalR-driven sync progress
-    this.syncState.set({ syncing: true, progress: 50, stage: 'Syncing...', caption: '' });
+    try {
+      const connection = new signalR.HubConnectionBuilder()
+        .withUrl(`${API_BASE_URL}/hubs/sync`)
+        .withAutomaticReconnect()
+        .build();
 
-    this.loadApplications();
-    this.syncState.set({ syncing: false, progress: 0, stage: '', caption: '' });
-    const formatter = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' });
-    this.lastSyncLabel.set(`Last sync at ${formatter.format(new Date())}`);
-    this.statusNote.set(`Sync complete — applications refreshed from ${account.label}.`);
-    this.currentPage.set(1);
+      connection.on('SyncProgress', (stage: string, percent: number) => {
+        this.syncState.set({
+          syncing: true,
+          progress: percent,
+          stage: `${stage} — ${account.label}`,
+          caption: `${stage}`,
+        });
+      });
+
+      connection.on('SyncCompleted', () => {
+        this.loadApplications();
+        this.syncState.set({ syncing: false, progress: 0, stage: '', caption: '' });
+        const now = new Date();
+        this.storage.setItem(LAST_SYNC_KEY, now.toISOString());
+        this.lastSyncLabel.set(this.formatSyncLabel(now));
+        this.statusNote.set(`Sync complete — applications refreshed from ${account.label}.`);
+        connection.stop();
+      });
+
+      connection.on('SyncFailed', (error: string) => {
+        this.syncState.set({ syncing: false, progress: 0, stage: '', caption: '' });
+        this.statusNote.set(`Sync failed: ${error}`);
+        connection.stop();
+      });
+
+      await connection.start();
+
+      const { jobId } = (await this.http
+        .post<{ jobId: string }>(`${API_BASE_URL}/api/v1/sync`, {
+          emailConnectionId: account.id,
+        })
+        .toPromise()) as { jobId: string };
+
+      await connection.invoke('JoinJob', jobId);
+    } catch (error) {
+      console.error('Failed to start sync:', error);
+      this.syncState.set({ syncing: false, progress: 0, stage: '', caption: '' });
+      this.statusNote.set('Failed to start sync.');
+    }
+  }
+
+  private formatSyncLabel(date: Date): string {
+    const formatter = new Intl.DateTimeFormat(undefined, {
+      day: 'numeric',
+      month: 'short',
+      hour: 'numeric',
+      minute: '2-digit',
+    });
+    return `Last sync at ${formatter.format(date)}`;
+  }
+
+  private getStoredSyncLabel(): string {
+    const stored = this.storage.getItem(LAST_SYNC_KEY);
+    if (stored) {
+      const date = new Date(stored);
+      if (!isNaN(date.getTime())) return this.formatSyncLabel(date);
+    }
+    return 'No sync yet';
   }
 
   search(query: string): void {

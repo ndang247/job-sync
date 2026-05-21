@@ -13,7 +13,7 @@
         class="search-input"
         id="searchInput"
         type="search"
-        placeholder="Search by company, role, status, or date"
+        placeholder="Search by company, role, email, status, or date"
         autocomplete="off"
         [value]="service.searchQuery()"
         (input)="onSearch($event)"
@@ -43,8 +43,8 @@
         @if (showSearchEmpty()) {
           <h3>No matching applications</h3>
           <p>
-            No applications match "{{ service.searchQuery().trim() }}". Try a company, role, status,
-            or applied date.
+            No applications match "{{ service.searchQuery().trim() }}". Try a company, role, email,
+            status, or applied date.
           </p>
         } @else {
           <h3>No applications yet</h3>
@@ -62,6 +62,7 @@
             <tr>
               <th scope="col">Company name</th>
               <th scope="col">Role</th>
+              <th scope="col">Email</th>
               <th scope="col">Status</th>
               <th scope="col">Applied date</th>
             </tr>
@@ -71,6 +72,7 @@
               <tr>
                 <td class="company">{{ app.companyName }}</td>
                 <td class="role">{{ app.jobRole }}</td>
+                <td class="email">{{ app.email }}</td>
                 <td>
                   <span class="status-pill" [attr.data-status]="app.status">{{ app.status }}</span>
                 </td>

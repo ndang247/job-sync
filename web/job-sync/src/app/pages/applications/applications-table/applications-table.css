@@ -1,5 +1,6 @@
 :host {
-  display: block;
+  display: grid;
+  gap: 24px;
 }
 
 .section-head {
