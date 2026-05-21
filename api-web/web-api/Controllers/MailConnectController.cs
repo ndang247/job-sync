@@ -1,9 +1,12 @@
+using System.Security.Cryptography;
 using Google.Apis.Gmail.v1;
 using core.Entities;
 using core.Enums;
 using core.Interfaces;
 using infrastructure.Data;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.EntityFrameworkCore;
 
 namespace web_api.Controllers;
@@ -29,21 +32,35 @@ public class MailConnectController : ControllerBase
         var clientId = _configuration["Google:ClientId"]!;
         var redirectUri = _configuration["Google:RedirectUri"]!;
 
-        var scopes = $"{GmailService.Scope.GmailReadonly} openid profile email";
+        var scopes = string.Join(" ", new[]
+        {
+            GmailService.Scope.GmailReadonly,
+            "openid",
+            "profile",
+            "email"
+        });
 
-        var url = $"https://accounts.google.com/o/oauth2/v2/auth?" +
-                  $"client_id={clientId}&" +
-                  $"redirect_uri={Uri.EscapeDataString(redirectUri)}&" +
-                  $"response_type=code&" +
-                  $"scope={Uri.EscapeDataString(scopes)}&" +
-                  $"access_type=offline&" +
-                  $"prompt=consent";
+        var state = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
+        HttpContext.Session.SetString("GoogleOAuthState", state);
+
+        var url = QueryHelpers.AddQueryString(
+            "https://accounts.google.com/o/oauth2/v2/auth",
+            new Dictionary<string, string?>
+            {
+                ["client_id"] = clientId,
+                ["redirect_uri"] = redirectUri,
+                ["response_type"] = "code",
+                ["scope"] = scopes,
+                ["access_type"] = "offline",
+                ["prompt"] = "consent",
+                ["state"] = state
+            });
 
         return Redirect(url);
     }
 
     [HttpGet("gmail/callback")]
-    public async Task<IActionResult> GmailCallback([FromQuery] string? code, [FromQuery] string? error)
+    public async Task<IActionResult> GmailCallback([FromQuery] string? code, [FromQuery] string? state, [FromQuery] string? error)
     {
         var frontendUrl = _configuration["FrontendUrl"]!;
 
@@ -51,6 +68,13 @@ public class MailConnectController : ControllerBase
         {
             return Redirect($"{frontendUrl}/connect?error={Uri.EscapeDataString(error ?? "no_code")}");
         }
+
+        var expectedState = HttpContext.Session.GetString("GoogleOAuthState");
+        if (string.IsNullOrEmpty(expectedState) || expectedState != state)
+        {
+            return BadRequest("Invalid OAuth state.");
+        }
+        HttpContext.Session.Remove("GoogleOAuthState");
 
         var tokenResult = await _tokenExchanger.ExchangeCodeAsync(code);
 

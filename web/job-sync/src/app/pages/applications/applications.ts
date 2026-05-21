@@ -16,6 +16,7 @@ export class Applications implements OnInit {
   private readonly service = inject(ApplicationsService);
 
   ngOnInit(): void {
+    this.service.loadConnections();
     this.service.loadApplications();
   }
 }

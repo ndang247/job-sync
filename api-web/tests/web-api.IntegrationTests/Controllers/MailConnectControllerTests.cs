@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Web;
 using core.Entities;
 using core.Enums;
 using core.Interfaces;
@@ -25,6 +26,14 @@ public class MailConnectControllerTests : IClassFixture<CustomWebApplicationFact
 
     #region Gmail Connect Tests
 
+    private async Task<string> GetOAuthStateAsync()
+    {
+        var response = await _client.GetAsync("/api/v1/mail-connect/gmail/start");
+        var location = response.Headers.Location!.ToString();
+        var query = HttpUtility.ParseQueryString(new Uri(location).Query);
+        return query["state"]!;
+    }
+
     [Fact]
     public async Task GmailStart_RedirectsToGoogle()
     {
@@ -42,13 +51,15 @@ public class MailConnectControllerTests : IClassFixture<CustomWebApplicationFact
     [Fact]
     public async Task GmailCallback_ValidCode_CreatesUserAndRedirects()
     {
+        var state = await GetOAuthStateAsync();
+
         _factory.MockTokenExchanger.ExchangeCodeAsync(
             Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(new OAuthTokenResult(
                 "access-token-123", "refresh-token-456", DateTime.UtcNow.AddHours(1),
                 "google-sub-new", "test@gmail.com", "John", "Doe", "https://www.googleapis.com/auth/gmail.readonly"));
 
-        var response = await _client.GetAsync("/api/v1/mail-connect/gmail/callback?code=valid-auth-code");
+        var response = await _client.GetAsync($"/api/v1/mail-connect/gmail/callback?code=valid-auth-code&state={Uri.EscapeDataString(state)}");
 
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         var location = response.Headers.Location!.ToString();
@@ -81,26 +92,30 @@ public class MailConnectControllerTests : IClassFixture<CustomWebApplicationFact
     [Fact]
     public async Task GmailCallback_SameSubjectId_UpsertAndDoesNotCreateNewUser()
     {
+        var state1 = await GetOAuthStateAsync();
+
         _factory.MockTokenExchanger.ExchangeCodeAsync(
             Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(new OAuthTokenResult(
                 "at1", "rt-old", DateTime.UtcNow.AddHours(1),
                 "upsert-sub", "same@gmail.com", "Upsert", "Test", "gmail.readonly"));
 
-        var response1 = await _client.GetAsync("/api/v1/mail-connect/gmail/callback?code=code-first");
+        var response1 = await _client.GetAsync($"/api/v1/mail-connect/gmail/callback?code=code-first&state={Uri.EscapeDataString(state1)}");
         var location1 = response1.Headers.Location!.ToString();
         var query1 = System.Web.HttpUtility.ParseQueryString(new Uri(location1).Query);
         var connId1 = query1["connectionId"]!;
         var userId1 = query1["userId"]!;
 
         // Connect again with same subjectId but new refresh token
+        var state2 = await GetOAuthStateAsync();
+
         _factory.MockTokenExchanger.ExchangeCodeAsync(
             Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(new OAuthTokenResult(
                 "at2", "rt-new", DateTime.UtcNow.AddHours(1),
                 "upsert-sub", "same@gmail.com", "Upsert", "Test", "gmail.readonly"));
 
-        var response2 = await _client.GetAsync("/api/v1/mail-connect/gmail/callback?code=code-second");
+        var response2 = await _client.GetAsync($"/api/v1/mail-connect/gmail/callback?code=code-second&state={Uri.EscapeDataString(state2)}");
         var location2 = response2.Headers.Location!.ToString();
         var query2 = System.Web.HttpUtility.ParseQueryString(new Uri(location2).Query);
         var connId2 = query2["connectionId"]!;
@@ -139,13 +154,15 @@ public class MailConnectControllerTests : IClassFixture<CustomWebApplicationFact
     [Fact]
     public async Task GmailCallback_CallsTokenExchangerWithCode()
     {
+        var state = await GetOAuthStateAsync();
+
         _factory.MockTokenExchanger.ExchangeCodeAsync(
             Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(new OAuthTokenResult(
                 "at", "rt", DateTime.UtcNow.AddHours(1),
                 "sub-verify", "e@g.com", "Jane", "Smith", "scopes"));
 
-        await _client.GetAsync("/api/v1/mail-connect/gmail/callback?code=my-special-code");
+        await _client.GetAsync($"/api/v1/mail-connect/gmail/callback?code=my-special-code&state={Uri.EscapeDataString(state)}");
 
         await _factory.MockTokenExchanger.Received(1)
             .ExchangeCodeAsync("my-special-code", Arg.Any<CancellationToken>());
