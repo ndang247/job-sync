@@ -11,7 +11,7 @@ This archive is the source of truth for turning the design into production code.
 
 ## Source map
 - Primary entry: `job-applications-tracker.html`
-- HTML screens detected: 1
+- HTML screens detected: 4
 - Stylesheets detected: 0
 - Script/component files detected: 0
 - Supporting assets detected: 1
@@ -64,6 +64,9 @@ For responsive web exports, treat these as a modern breakpoint system for one ad
 
 ## Entry points
 - `job-applications-tracker.html`
+- `job-application-edit.html`
+- `passwordless-login.html`
+- `passwordless-otp.html`
 
 ## Styles
 - None detected

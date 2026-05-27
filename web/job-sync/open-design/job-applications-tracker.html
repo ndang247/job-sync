@@ -404,35 +404,50 @@
       overflow-x: auto;
     }
 
-    .applications-table {
-      width: 100%;
-      border-collapse: collapse;
-      min-width: 720px;
+    .rows-shell {
+      display: grid;
+      min-width: 1120px;
     }
 
-    .applications-table thead th {
-      padding: 16px 22px;
+    .rows-head,
+    .application-row {
+      display: grid;
+      grid-template-columns: minmax(160px, 1.1fr) minmax(260px, 2.2fr) minmax(220px, 1.3fr) minmax(120px, 0.85fr) minmax(120px, 0.8fr) minmax(110px, 0.7fr);
+      gap: 18px;
+      align-items: start;
+      padding: 18px 22px;
+    }
+
+    .rows-head {
       border-bottom: 1px solid var(--border);
       color: var(--muted);
       font: 600 11px/1.2 var(--font-mono);
       letter-spacing: 0.18em;
       text-transform: uppercase;
-      text-align: left;
       background: color-mix(in oklab, var(--bg) 38%, var(--surface));
     }
 
-    .applications-table tbody td {
-      padding: 18px 22px;
-      border-bottom: 1px solid var(--border);
-      vertical-align: top;
+    .application-list {
+      display: grid;
     }
 
-    .applications-table tbody tr:last-child td {
+    .application-row {
+      border-bottom: 1px solid var(--border);
+      transition: background-color 180ms ease;
+    }
+
+    .application-row:last-child {
       border-bottom: 0;
     }
 
-    .applications-table tbody tr:hover {
+    .application-row:hover {
       background: color-mix(in oklab, var(--accent) 3%, var(--surface));
+    }
+
+    .row-cell {
+      display: grid;
+      gap: 6px;
+      min-width: 0;
     }
 
     .company {
@@ -447,9 +462,38 @@
       text-wrap: pretty;
     }
 
+    .email {
+      color: var(--muted);
+      font-size: 0.95rem;
+      white-space: nowrap;
+    }
+
+    .action-cell {
+      align-items: start;
+      justify-items: start;
+      white-space: nowrap;
+    }
+
+    .table-action {
+      min-height: 36px;
+      padding: 0 14px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--fg);
+    }
+
+    .table-action:hover,
+    .table-action:focus-visible {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
     .status-pill {
       display: inline-flex;
       align-items: center;
+      justify-self: start;
+      width: fit-content;
+      max-width: max-content;
       min-height: 30px;
       padding: 0 11px;
       border: 1px solid color-mix(in oklab, var(--accent) 25%, var(--border));
@@ -463,19 +507,15 @@
       background: color-mix(in oklab, var(--accent) 12%, var(--surface));
     }
 
-    .status-pill[data-status="offer"] {
+    .status-pill[data-status="offered"] {
       border-color: color-mix(in oklab, var(--success) 28%, var(--border));
       background: color-mix(in oklab, var(--success) 11%, var(--surface));
     }
 
-    .status-pill[data-status="rejected"] {
+    .status-pill[data-status="company-rejected"],
+    .status-pill[data-status="candidate-rejected"] {
       border-color: color-mix(in oklab, oklch(54% 0.18 25) 24%, var(--border));
       background: color-mix(in oklab, oklch(54% 0.18 25) 9%, var(--surface));
-    }
-
-    .status-pill[data-status="reviewing"] {
-      border-color: color-mix(in oklab, oklch(58% 0.09 85) 28%, var(--border));
-      background: color-mix(in oklab, oklch(58% 0.09 85) 10%, var(--surface));
     }
 
     .date {
@@ -594,6 +634,32 @@
     }
 
     @container applications (max-width: 740px) {
+      .rows-shell {
+        min-width: 0;
+      }
+
+      .rows-head {
+        display: none;
+      }
+
+      .application-row {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 16px;
+        padding: 18px;
+      }
+
+      .row-cell::before {
+        content: attr(data-label);
+        color: var(--muted);
+        font: 600 10px/1.2 var(--font-mono);
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+      }
+
+      .action-cell {
+        justify-items: start;
+      }
+
       .toolbar {
         align-items: stretch;
       }
@@ -615,6 +681,12 @@
       .page-indicator,
       .pagination-actions .button {
         width: 100%;
+      }
+    }
+
+    @container applications (max-width: 520px) {
+      .application-row {
+        grid-template-columns: 1fr;
       }
     }
 
@@ -678,10 +750,11 @@
           <div class="action-row" aria-label="Primary actions">
             <button class="button" id="googleButton" type="button">Add Google account</button>
             <button class="button button-primary" id="syncButton" type="button">Sync</button>
+            <button class="button" id="logoutButton" type="button">Logout</button>
           </div>
           <div class="hero-meta">
             <span class="meta-pill"><strong id="accountCount">1</strong> Google account connected</span>
-            <span id="lastSync">Last sync just now</span>
+            <span id="lastSync">Last sync —</span>
           </div>
           <div class="status-note" id="statusNote" aria-live="polite"></div>
         </div>
@@ -723,7 +796,7 @@
               class="search-input"
               id="searchInput"
               type="search"
-              placeholder="Search by company, role, status, or date"
+              placeholder="Search by company, role, email, status, or date"
               autocomplete="off"
             >
           </div>
@@ -752,17 +825,17 @@
 
           <div class="visually-hidden" id="tableState">
             <div class="table-wrap">
-              <table class="applications-table">
-                <thead>
-                  <tr>
-                    <th scope="col">Company name</th>
-                    <th scope="col">Role</th>
-                    <th scope="col">Status</th>
-                    <th scope="col">Applied date</th>
-                  </tr>
-                </thead>
-                <tbody id="tableBody"></tbody>
-              </table>
+              <div class="rows-shell" role="table" aria-label="Job applications">
+                <div class="rows-head" role="row">
+                  <div role="columnheader">Company name</div>
+                  <div role="columnheader">Role</div>
+                  <div role="columnheader">Email</div>
+                  <div role="columnheader">Status</div>
+                  <div role="columnheader">Applied date</div>
+                  <div role="columnheader">Action</div>
+                </div>
+                <div class="application-list" id="tableBody" role="rowgroup"></div>
+              </div>
             </div>
             <div class="pagination">
               <div class="pagination-summary" id="paginationSummary">Showing 0–0 of 0</div>
@@ -803,6 +876,11 @@
 
   <script>
     const PAGE_SIZE = 10;
+    const STORAGE_KEYS = {
+      applications: "job-tracker.applications.v2",
+      accounts: "job-tracker.accounts.v2",
+      flash: "job-tracker.flash"
+    };
 
     const MOCK_COMPANIES = [
       "Amazon",
@@ -842,7 +920,13 @@
       "Engineer, Automation & Workflow"
     ];
 
-    const MOCK_STATUSES = ["applied", "reviewing", "interviewing", "offer", "rejected"];
+    const STATUS_OPTIONS = [
+      "Applied",
+      "Interviewing",
+      "Offered",
+      "Company Rejected",
+      "Candidate Rejected"
+    ];
 
     function formatMockDate(offset) {
       const date = new Date(Date.UTC(2026, 4, 20 - offset));
@@ -851,13 +935,6 @@
       const year = date.getUTCFullYear();
       return `${day}-${month}-${year}`;
     }
-
-    const SAMPLE_APPLICATIONS = Array.from({ length: 100 }, (_, index) => ({
-      Status: MOCK_STATUSES[index % MOCK_STATUSES.length],
-      JobRole: MOCK_ROLES[index % MOCK_ROLES.length],
-      AppliedDate: formatMockDate(index),
-      CompanyName: MOCK_COMPANIES[index % MOCK_COMPANIES.length]
-    }));
 
     const syncStages = [
       { progress: 14, stage: "Checking connected Google accounts", caption: "Confirming which inboxes are ready for sync." },
@@ -871,22 +948,130 @@
       { id: "primary", label: "candidate.primary@gmail.com" }
     ];
 
+    function createSampleApplications() {
+      return Array.from({ length: 100 }, (_, index) => ({
+        Id: `application-${String(index + 1).padStart(3, "0")}`,
+        Status: STATUS_OPTIONS[index % STATUS_OPTIONS.length],
+        JobRole: MOCK_ROLES[index % MOCK_ROLES.length],
+        AppliedDate: formatMockDate(index),
+        CompanyName: MOCK_COMPANIES[index % MOCK_COMPANIES.length],
+        Email: index % 4 === 0 ? "jobs+portfolio@gmail.com" : `candidate.${(index % 6) + 1}@gmail.com`
+      }));
+    }
+
+    function readStorage(key) {
+      try {
+        const raw = window.localStorage.getItem(key);
+        return raw ? JSON.parse(raw) : null;
+      } catch (error) {
+        return null;
+      }
+    }
+
+    function writeStorage(key, value) {
+      try {
+        window.localStorage.setItem(key, JSON.stringify(value));
+        return true;
+      } catch (error) {
+        return false;
+      }
+    }
+
+    function removeStorage(key) {
+      try {
+        window.localStorage.removeItem(key);
+      } catch (error) {
+        return false;
+      }
+      return true;
+    }
+
+    function normalizeStoredStatus(status) {
+      const normalized = String(status ?? "").trim().toLowerCase();
+      switch (normalized) {
+        case "applied":
+          return "Applied";
+        case "interviewing":
+          return "Interviewing";
+        case "offer":
+        case "offered":
+          return "Offered";
+        case "candidate rejected":
+        case "candidate-rejected":
+          return "Candidate Rejected";
+        case "rejected":
+        case "company rejected":
+        case "company-rejected":
+          return "Company Rejected";
+        case "reviewing":
+          return "Interviewing";
+        default:
+          return "Applied";
+      }
+    }
+
+    function normalizeStoredApplication(application, index) {
+      return {
+        Id: application.Id ?? `application-${String(index + 1).padStart(3, "0")}`,
+        CompanyName: application.CompanyName ?? "Unknown company",
+        JobRole: application.JobRole ?? "Unknown role",
+        Status: normalizeStoredStatus(application.Status),
+        AppliedDate: application.AppliedDate ?? formatMockDate(index),
+        Email: application.Email ?? INITIAL_ACCOUNTS[0].label
+      };
+    }
+
+    function loadPersistedAccounts() {
+      const stored = readStorage(STORAGE_KEYS.accounts);
+      if (Array.isArray(stored) && stored.length > 0) {
+        return stored;
+      }
+      writeStorage(STORAGE_KEYS.accounts, INITIAL_ACCOUNTS);
+      return INITIAL_ACCOUNTS.map((account) => ({ ...account }));
+    }
+
+    function loadPersistedApplications() {
+      const stored = readStorage(STORAGE_KEYS.applications);
+      if (Array.isArray(stored) && stored.length > 0) {
+        const normalized = stored.map(normalizeStoredApplication);
+        writeStorage(STORAGE_KEYS.applications, normalized);
+        return normalized;
+      }
+      const seeded = createSampleApplications();
+      writeStorage(STORAGE_KEYS.applications, seeded);
+      return seeded;
+    }
+
+    function persistApplications(applications) {
+      writeStorage(STORAGE_KEYS.applications, applications);
+    }
+
+    function persistAccounts(accounts) {
+      writeStorage(STORAGE_KEYS.accounts, accounts);
+    }
+
+    function normalizeStatus(status) {
+      return status.toLowerCase().replace(/\s+/g, "-");
+    }
+
+    const persistedAccounts = loadPersistedAccounts();
+
     const state = {
       applications: [],
-      accounts: INITIAL_ACCOUNTS.map((account) => ({ ...account })),
+      accounts: persistedAccounts,
       loading: true,
       syncing: false,
       syncModalOpen: false,
-      selectedAccountId: INITIAL_ACCOUNTS[0].id,
+      selectedAccountId: persistedAccounts[0]?.id ?? "",
       syncProgress: 0,
       syncStage: "Preparing sync…",
       syncCaption: "Waiting for the next stage.",
       searchQuery: "",
       currentPage: 1,
-      lastSyncLabel: "Last sync just now",
+      lastSyncLabel: "Last sync —",
       statusNote: "",
       syncTimer: null,
-      syncAccountLabel: INITIAL_ACCOUNTS[0].label
+      syncAccountLabel: persistedAccounts[0]?.label ?? ""
     };
 
     const loadingState = document.getElementById("loadingState");
@@ -912,6 +1097,7 @@
     const statusNote = document.getElementById("statusNote");
     const syncButton = document.getElementById("syncButton");
     const googleButton = document.getElementById("googleButton");
+    const logoutButton = document.getElementById("logoutButton");
     const emptySyncAction = document.getElementById("emptySyncAction");
     const syncModal = document.getElementById("syncModal");
     const syncAccountSelect = document.getElementById("syncAccountSelect");
@@ -920,17 +1106,13 @@
 
     let modalTrigger = null;
 
-    function cloneApplications() {
-      return SAMPLE_APPLICATIONS.map((item) => ({ ...item }));
-    }
-
     function getSelectedAccount() {
       return state.accounts.find((account) => account.id === state.selectedAccountId) ?? state.accounts[0] ?? null;
     }
 
     function mockFetchApplications() {
       return new Promise((resolve) => {
-        window.setTimeout(() => resolve(cloneApplications()), 900);
+        window.setTimeout(() => resolve(loadPersistedApplications().map((item) => ({ ...item }))), 900);
       });
     }
 
@@ -953,6 +1135,7 @@
         const haystack = [
           application.CompanyName,
           application.JobRole,
+          application.Email,
           application.Status,
           application.AppliedDate
         ].join(" ").toLowerCase();
@@ -979,13 +1162,56 @@
       tableBody.innerHTML = "";
 
       pageItems.forEach((application) => {
-        const row = document.createElement("tr");
-        row.innerHTML = `
-          <td class="company">${application.CompanyName}</td>
-          <td class="role">${application.JobRole}</td>
-          <td><span class="status-pill" data-status="${application.Status}">${application.Status}</span></td>
-          <td class="date">${application.AppliedDate}</td>
-        `;
+        const row = document.createElement("div");
+        row.className = "application-row";
+        row.setAttribute("role", "row");
+
+        const companyCell = document.createElement("div");
+        companyCell.className = "row-cell company";
+        companyCell.dataset.label = "Company name";
+        companyCell.setAttribute("role", "cell");
+        companyCell.textContent = application.CompanyName;
+
+        const roleCell = document.createElement("div");
+        roleCell.className = "row-cell role";
+        roleCell.dataset.label = "Role";
+        roleCell.setAttribute("role", "cell");
+        roleCell.textContent = application.JobRole;
+
+        const emailCell = document.createElement("div");
+        emailCell.className = "row-cell email";
+        emailCell.dataset.label = "Email";
+        emailCell.setAttribute("role", "cell");
+        emailCell.textContent = application.Email;
+
+        const statusCell = document.createElement("div");
+        statusCell.className = "row-cell";
+        statusCell.dataset.label = "Status";
+        statusCell.setAttribute("role", "cell");
+        const statusPill = document.createElement("span");
+        statusPill.className = "status-pill";
+        statusPill.dataset.status = normalizeStatus(application.Status);
+        statusPill.textContent = application.Status;
+        statusCell.appendChild(statusPill);
+
+        const dateCell = document.createElement("div");
+        dateCell.className = "row-cell date";
+        dateCell.dataset.label = "Applied date";
+        dateCell.setAttribute("role", "cell");
+        dateCell.textContent = application.AppliedDate;
+
+        const actionCell = document.createElement("div");
+        actionCell.className = "row-cell action-cell";
+        actionCell.dataset.label = "Action";
+        actionCell.setAttribute("role", "cell");
+        const editButton = document.createElement("button");
+        editButton.className = "table-action";
+        editButton.type = "button";
+        editButton.dataset.editId = application.Id;
+        editButton.textContent = "Edit";
+        actionCell.appendChild(editButton);
+
+        row.append(companyCell, roleCell, emailCell, statusCell, dateCell, actionCell);
         tableBody.appendChild(row);
       });
     }
@@ -1070,7 +1296,7 @@
       emptyState.classList.toggle("visually-hidden", !(showEmpty || showSearchEmpty));
       tableState.classList.toggle("visually-hidden", !showTable);
       emptyStateCopy.textContent = showSearchEmpty
-        ? `No applications match “${state.searchQuery.trim()}”. Try a company, role, status, or applied date.`
+        ? `No applications match “${state.searchQuery.trim()}”. Try a company, role, email, status, or applied date.`
         : "The server returned an empty result. Add a Google account or run another sync once new application emails arrive.";
       emptySyncAction.hidden = showSearchEmpty;
       renderSyncPanel();
@@ -1093,19 +1319,30 @@
       state.loading = true;
       renderStates();
 
-      const applications = await mockFetchApplications();
-      state.applications = applications;
-      state.currentPage = 1;
-      state.loading = false;
-      renderStates();
+      try {
+        const applications = await mockFetchApplications();
+        state.applications = applications;
+        persistApplications(applications);
+        state.currentPage = 1;
+      } catch (error) {
+        state.applications = createSampleApplications();
+        state.currentPage = 1;
+        state.statusNote = "The saved browser data could not be read, so a fresh server snapshot was loaded instead.";
+      } finally {
+        state.loading = false;
+        renderStates();
+      }
     }
 
-    function timestampLabel() {
+    function timestampLabel(date = new Date()) {
       const formatter = new Intl.DateTimeFormat(undefined, {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
         hour: "numeric",
         minute: "2-digit"
       });
-      return `Last sync at ${formatter.format(new Date())}`;
+      return `Last sync ${formatter.format(date)}`;
     }
 
     function openSyncModal(trigger) {
@@ -1177,9 +1414,32 @@
         label: `candidate.${nextIndex}@gmail.com`
       };
       state.accounts = [...state.accounts, newAccount];
+      persistAccounts(state.accounts);
       state.selectedAccountId = newAccount.id;
       state.statusNote = `Google account added. ${state.accounts.length} accounts are ready for the next sync.`;
       renderStates();
+    });
+    logoutButton.addEventListener("click", () => {
+      try {
+        window.sessionStorage.removeItem("candidateTrackerAuthIdentity");
+      } catch (error) {
+        // Keep logout navigation working even if storage is unavailable.
+      }
+      window.location.href = "passwordless-login.html";
+    });
+
+    tableBody.addEventListener("click", (event) => {
+      const editButton = event.target.closest("[data-edit-id]");
+      if (!(editButton instanceof HTMLElement)) {
+        return;
+      }
+
+      const { editId } = editButton.dataset;
+      if (!editId) {
+        return;
+      }
+
+      window.location.href = `job-application-edit.html?id=${encodeURIComponent(editId)}`;
     });
 
     syncButton.addEventListener("click", () => openSyncModal(syncButton));
@@ -1221,6 +1481,13 @@
       }
     });
 
+    const flashNote = readStorage(STORAGE_KEYS.flash);
+    if (flashNote) {
+      state.statusNote = flashNote;
+      removeStorage(STORAGE_KEYS.flash);
+    }
+    state.lastSyncLabel = timestampLabel();
+    renderStates();
     loadApplications();
   </script>
 </body>

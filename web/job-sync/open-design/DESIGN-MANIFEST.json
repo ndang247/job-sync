@@ -5,21 +5,40 @@
   "sourceFiles": {
     "all": [
       "DESIGN.md",
-      "job-applications-tracker.html"
+      "job-application-edit.html",
+      "job-applications-tracker.html",
+      "passwordless-login.html",
+      "passwordless-otp.html"
     ],
     "html": [
-      "job-applications-tracker.html"
+      "job-application-edit.html",
+      "job-applications-tracker.html",
+      "passwordless-login.html",
+      "passwordless-otp.html"
     ],
     "css": [],
     "scriptsAndComponents": [],
-    "assets": [
-      "DESIGN.md"
-    ]
+    "assets": ["DESIGN.md"]
   },
   "screens": [
     {
+      "file": "job-application-edit.html",
+      "role": "product-screen",
+      "implementationNote": "Preserve visual hierarchy, responsive behavior, and interactive states from this screen."
+    },
+    {
       "file": "job-applications-tracker.html",
       "role": "product-screen",
+      "implementationNote": "Preserve visual hierarchy, responsive behavior, and interactive states from this screen."
+    },
+    {
+      "file": "passwordless-login.html",
+      "role": "screen",
+      "implementationNote": "Preserve visual hierarchy, responsive behavior, and interactive states from this screen."
+    },
+    {
+      "file": "passwordless-otp.html",
+      "role": "screen",
       "implementationNote": "Preserve visual hierarchy, responsive behavior, and interactive states from this screen."
     }
   ],
@@ -44,18 +63,10 @@
   ],
   "landingPage": {
     "detection": "Inspect files and screen names for a marketing/landing page surface. If present, keep it separate from product app screens.",
-    "requiredSections": [
-      "hero",
-      "value props",
-      "product proof/screenshots",
-      "feature proof",
-      "CTA"
-    ]
+    "requiredSections": ["hero", "value props", "product proof/screenshots", "feature proof", "CTA"]
   },
   "tokens": {
-    "source": [
-      "job-applications-tracker.html"
-    ],
+    "source": ["job-applications-tracker.html"],
     "required": [
       "background",
       "surface",
@@ -72,9 +83,7 @@
     "note": "Extract/freeze tokens before framework implementation so coding tools do not substitute default theme colors or typography."
   },
   "interactions": {
-    "source": [
-      "job-applications-tracker.html"
-    ],
+    "source": ["job-applications-tracker.html"],
     "requiredStates": [
       "default",
       "hover",

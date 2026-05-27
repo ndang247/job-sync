@@ -80,9 +80,10 @@ The system is mostly square and editorial.
 - **Primary actions:** Two header buttons, with the primary action filled in ink and shifting to clay on hover/focus.
 - **Sync feedback:** A bordered progress panel with percentage, stage text, and a single clay progress bar.
 - **Account modal:** Compact, centered dialog with one dropdown, clear labels, and minimal action rows.
-- **Search and table:** Search sits above the table as a utility control; the table uses mono uppercase headers, generous row spacing, and hover tinting.
-- **Status pills:** Lightweight bordered chips with subtle state-specific tinting for applied, reviewing, interviewing, offer, and rejected.
+- **Search and table:** Search sits above the table as a utility control; the table uses mono uppercase headers, generous row spacing, hover tinting, and an Action column with quiet inline edit buttons.
+- **Status pills:** Lightweight bordered chips with subtle state-specific tinting for Applied, Interviewing, Offered, Company Rejected, and Candidate Rejected.
 - **Pagination:** Quiet footer bar with counts and previous/next controls, treated as part of the data surface.
+- **Edit flow:** The edit screen is a full-page form in the same editorial shell, with connected-email selection, conditional custom-email entry, bottom-right cancel/submit controls, and a confirmation modal before saving.
 
 ## Do's and Don'ts
 

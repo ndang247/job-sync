@@ -1,0 +1,905 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Edit job application</title>
+  <style>
+    :root {
+      --bg: oklch(98% 0.004 95);
+      --surface: oklch(100% 0.002 95);
+      --fg: oklch(20% 0.018 70);
+      --muted: oklch(48% 0.012 70);
+      --border: oklch(90% 0.006 95);
+      --accent: oklch(52% 0.10 28);
+      --success: oklch(58% 0.11 145);
+      --shadow: 0 16px 50px color-mix(in oklab, var(--fg) 8%, transparent);
+      --font-display: 'Iowan Old Style', 'Charter', Georgia, serif;
+      --font-body: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      --font-mono: 'JetBrains Mono', 'SFMono-Regular', ui-monospace, monospace;
+      color-scheme: light;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      margin: 0;
+      min-height: 100%;
+      background: var(--bg);
+      color: var(--fg);
+      font-family: var(--font-body);
+    }
+
+    body {
+      padding: clamp(12px, 2vw, 24px);
+    }
+
+    body.modal-open {
+      overflow: hidden;
+    }
+
+    button,
+    input,
+    select {
+      font: inherit;
+    }
+
+    button {
+      cursor: pointer;
+    }
+
+    .app-shell {
+      min-height: calc(100vh - (clamp(12px, 2vw, 24px) * 2));
+      display: grid;
+      grid-template-rows: auto 1fr;
+      background: color-mix(in oklab, var(--surface) 94%, white);
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow);
+    }
+
+    .page-head {
+      display: grid;
+      gap: 20px;
+      padding: clamp(24px, 4vw, 48px);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .eyebrow {
+      margin: 0;
+      font: 600 11px/1.2 var(--font-mono);
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .head-grid {
+      display: grid;
+      gap: 24px;
+      grid-template-columns: minmax(0, 1.3fr) minmax(280px, 0.8fr);
+      align-items: end;
+    }
+
+    .page-head h1 {
+      margin: 0;
+      max-width: 12ch;
+      font-family: var(--font-display);
+      font-size: clamp(2.4rem, 4vw, 4.75rem);
+      font-weight: 400;
+      line-height: 0.95;
+      letter-spacing: -0.03em;
+      text-wrap: pretty;
+    }
+
+    .page-head h1 + p {
+      margin-top: 18px;
+    }
+
+    .page-head p {
+      margin: 0;
+      max-width: 38rem;
+      color: var(--muted);
+      line-height: 1.7;
+      text-wrap: pretty;
+    }
+
+    .quiet-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      width: fit-content;
+      color: var(--fg);
+      text-decoration: none;
+      font: 600 11px/1.2 var(--font-mono);
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+    }
+
+    .quiet-link:hover,
+    .quiet-link:focus-visible {
+      color: var(--accent);
+    }
+
+    .summary-card {
+      display: grid;
+      gap: 10px;
+      padding: 20px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+    }
+
+    .summary-label {
+      color: var(--muted);
+      font: 600 11px/1.2 var(--font-mono);
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+    }
+
+    .summary-card strong {
+      font-size: 1.05rem;
+      line-height: 1.5;
+    }
+
+    .summary-card span {
+      color: var(--muted);
+      line-height: 1.6;
+    }
+
+    .content {
+      padding: clamp(20px, 3vw, 40px);
+      display: grid;
+      align-content: start;
+      gap: 20px;
+    }
+
+    .panel {
+      display: grid;
+      gap: 24px;
+      padding: clamp(20px, 3vw, 32px);
+      border: 1px solid var(--border);
+      background: var(--surface);
+    }
+
+    .panel-header {
+      display: grid;
+      gap: 10px;
+    }
+
+    .panel-header h2 {
+      margin: 0;
+      font-family: var(--font-display);
+      font-size: clamp(1.8rem, 3vw, 2.5rem);
+      font-weight: 400;
+      line-height: 1;
+    }
+
+    .panel-header p {
+      margin: 0;
+      max-width: 42rem;
+      color: var(--muted);
+      line-height: 1.7;
+    }
+
+    .form-grid {
+      display: grid;
+      gap: 20px;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .field-group {
+      display: grid;
+      gap: 10px;
+    }
+
+    .field-group[data-span="full"] {
+      grid-column: 1 / -1;
+    }
+
+    .field-label {
+      color: var(--muted);
+      font: 600 11px/1.2 var(--font-mono);
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+    }
+
+    .text-input,
+    .select-input {
+      min-height: 48px;
+      width: 100%;
+      padding: 0 14px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--fg);
+      border-radius: 0;
+    }
+
+    .text-input:focus-visible,
+    .select-input:focus-visible,
+    .button:focus-visible {
+      outline: 2px solid color-mix(in oklab, var(--accent) 55%, white);
+      outline-offset: 3px;
+    }
+
+    .help-text {
+      color: var(--muted);
+      font-size: 0.92rem;
+      line-height: 1.6;
+    }
+
+    .button-row {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 12px;
+      padding-top: 8px;
+    }
+
+    .button {
+      min-height: 44px;
+      padding: 0 18px;
+      border: 1px solid var(--fg);
+      background: transparent;
+      color: var(--fg);
+      transition: transform 180ms ease, background-color 180ms ease, color 180ms ease, border-color 180ms ease;
+    }
+
+    .button:hover:not(:disabled),
+    .button:focus-visible:not(:disabled) {
+      transform: translateY(-1px);
+    }
+
+    .button:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+
+    .button-primary {
+      background: var(--fg);
+      color: var(--surface);
+      border-color: var(--fg);
+    }
+
+    .button-primary:hover:not(:disabled),
+    .button-primary:focus-visible:not(:disabled) {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: var(--surface);
+    }
+
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 20;
+      display: grid;
+      place-items: center;
+      padding: 18px;
+      background: color-mix(in oklab, var(--fg) 24%, transparent);
+      backdrop-filter: blur(6px);
+    }
+
+    .modal-overlay[hidden] {
+      display: none;
+    }
+
+    .modal-card {
+      width: min(100%, 520px);
+      padding: clamp(20px, 4vw, 28px);
+      display: grid;
+      gap: 18px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      box-shadow: var(--shadow);
+    }
+
+    .modal-card h3 {
+      margin: 0;
+      font-family: var(--font-display);
+      font-size: clamp(1.7rem, 3vw, 2.3rem);
+      font-weight: 400;
+      line-height: 1;
+    }
+
+    .modal-card p,
+    .modal-card ul {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.7;
+    }
+
+    .modal-card ul {
+      padding-left: 18px;
+      display: grid;
+      gap: 8px;
+    }
+
+    .status-note {
+      min-height: 22px;
+      color: var(--muted);
+      font-size: 0.95rem;
+    }
+
+    .not-found {
+      padding: clamp(28px, 6vw, 72px);
+      display: grid;
+      gap: 16px;
+      justify-items: start;
+      border: 1px solid var(--border);
+      background: var(--surface);
+    }
+
+    .not-found h2 {
+      margin: 0;
+      font-family: var(--font-display);
+      font-size: clamp(2rem, 4vw, 3rem);
+      font-weight: 400;
+      line-height: 1;
+    }
+
+    .not-found p {
+      margin: 0;
+      max-width: 32rem;
+      color: var(--muted);
+      line-height: 1.7;
+    }
+
+    .visually-hidden {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+
+    @media (max-width: 920px) {
+      .head-grid,
+      .form-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 520px) {
+      body {
+        padding: 12px;
+      }
+
+      .page-head,
+      .content {
+        padding-left: 16px;
+        padding-right: 16px;
+      }
+
+      .button-row > .button {
+        width: 100%;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *,
+      *::before,
+      *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="app-shell">
+    <section class="page-head">
+      <a class="quiet-link" href="job-applications-tracker.html">
+        <span aria-hidden="true">&lt;</span>
+        <span>Back to applications</span>
+      </a>
+      <div class="head-grid">
+        <div>
+          <h1 id="pageTitle">Review and update the selected application.</h1>
+          <p>Make changes to the company, role, status, applied date, or the email connection that owns the thread, then confirm before saving it back to the tracker.</p>
+        </div>
+        <aside class="summary-card" aria-live="polite">
+          <span class="summary-label">Selected record</span>
+          <strong id="summaryCompany">—</strong>
+          <span id="summaryRole">Waiting for the application details.</span>
+          <span id="summaryMeta">Choose a record from the tracker to edit.</span>
+        </aside>
+      </div>
+    </section>
+
+    <section class="content">
+      <div class="status-note" id="statusNote" aria-live="polite"></div>
+
+      <section class="panel" id="editPanel">
+        <div class="panel-header">
+          <p class="eyebrow">Application details</p>
+          <h2>Update the saved record.</h2>
+          <p>The form is prefilled from the selected job application. Email uses the connected account list, with an “Other” option when the original thread came from a different inbox.</p>
+        </div>
+
+        <form id="editForm" novalidate>
+          <div class="form-grid">
+            <div class="field-group">
+              <label class="field-label" for="companyName">Company name</label>
+              <input class="text-input" id="companyName" name="companyName" type="text" required>
+            </div>
+
+            <div class="field-group">
+              <label class="field-label" for="jobRole">Role</label>
+              <input class="text-input" id="jobRole" name="jobRole" type="text" required>
+            </div>
+
+            <div class="field-group">
+              <label class="field-label" for="status">Status</label>
+              <select class="select-input" id="status" name="status" required>
+                <option value="Applied">Applied</option>
+                <option value="Interviewing">Interviewing</option>
+                <option value="Offered">Offered</option>
+                <option value="Company Rejected">Company Rejected</option>
+                <option value="Candidate Rejected">Candidate Rejected</option>
+              </select>
+            </div>
+
+            <div class="field-group">
+              <label class="field-label" for="appliedDate">Applied date</label>
+              <input class="text-input" id="appliedDate" name="appliedDate" type="date" required>
+            </div>
+
+            <div class="field-group">
+              <label class="field-label" for="emailSelect">Email</label>
+              <select class="select-input" id="emailSelect" name="emailSelect" required></select>
+              <span class="help-text">Connected accounts appear first. Pick “Other” to enter a custom email.</span>
+            </div>
+
+            <div class="field-group" id="otherEmailGroup">
+              <label class="field-label" for="otherEmail">Other email</label>
+              <input class="text-input" id="otherEmail" name="otherEmail" type="email" placeholder="candidate+other@gmail.com">
+            </div>
+          </div>
+
+          <div class="button-row">
+            <button class="button" id="cancelButton" type="button">Cancel</button>
+            <button class="button button-primary" id="submitButton" type="button">Submit</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="not-found visually-hidden" id="notFoundState">
+        <p class="eyebrow">Application missing</p>
+        <h2>That application could not be found.</h2>
+        <p>The selected record no longer exists. Go back to the tracker and choose another application from the list.</p>
+        <a class="quiet-link" href="job-applications-tracker.html">Return to tracker</a>
+      </section>
+    </section>
+  </main>
+
+  <div class="modal-overlay" id="confirmModal" hidden>
+    <div
+      class="modal-card"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="confirmTitle"
+      aria-describedby="confirmDescription"
+    >
+      <div class="field-group">
+        <h3 id="confirmTitle">Confirm these changes.</h3>
+        <p id="confirmDescription">Review the updated values before saving them back to the applications list.</p>
+      </div>
+      <ul id="confirmList"></ul>
+      <div class="button-row">
+        <button class="button" id="cancelConfirmButton" type="button">Cancel</button>
+        <button class="button button-primary" id="confirmSubmitButton" type="button">Confirm changes</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const STORAGE_KEYS = {
+      applications: "job-tracker.applications.v2",
+      accounts: "job-tracker.accounts.v2",
+      flash: "job-tracker.flash"
+    };
+
+    const INITIAL_ACCOUNTS = [
+      { id: "primary", label: "candidate.primary@gmail.com" }
+    ];
+
+    const MOCK_COMPANIES = [
+      "Amazon",
+      "CYOS Solutions",
+      "Canva",
+      "Atlassian",
+      "WiseTech Global",
+      "Airwallex",
+      "Culture Amp",
+      "Xero",
+      "GitHub",
+      "Google",
+      "Microsoft",
+      "Stripe",
+      "SafetyCulture",
+      "Linktree",
+      "Rokt",
+      "Carsales",
+      "Notion",
+      "Block",
+      "Myob",
+      "Seek"
+    ];
+
+    const MOCK_ROLES = [
+      "Software Development Engineer, Public Sector Customer Engineering",
+      "Cloud Software Engineer",
+      "Frontend Engineer, Growth Platform",
+      "Product Engineer, Candidate Experience",
+      "Full Stack Developer, Internal Tools",
+      "Software Engineer, Developer Infrastructure",
+      "Applications Engineer, Platform Services",
+      "Backend Engineer, Identity",
+      "UI Engineer, Design Systems",
+      "Software Engineer, Integrations",
+      "Senior Web Engineer",
+      "Engineer, Automation & Workflow"
+    ];
+
+    const STATUS_OPTIONS = [
+      "Applied",
+      "Interviewing",
+      "Offered",
+      "Company Rejected",
+      "Candidate Rejected"
+    ];
+
+    const pageTitle = document.getElementById("pageTitle");
+    const summaryCompany = document.getElementById("summaryCompany");
+    const summaryRole = document.getElementById("summaryRole");
+    const summaryMeta = document.getElementById("summaryMeta");
+    const statusNote = document.getElementById("statusNote");
+    const editPanel = document.getElementById("editPanel");
+    const notFoundState = document.getElementById("notFoundState");
+    const editForm = document.getElementById("editForm");
+    const companyName = document.getElementById("companyName");
+    const jobRole = document.getElementById("jobRole");
+    const statusField = document.getElementById("status");
+    const appliedDate = document.getElementById("appliedDate");
+    const emailSelect = document.getElementById("emailSelect");
+    const otherEmailGroup = document.getElementById("otherEmailGroup");
+    const otherEmail = document.getElementById("otherEmail");
+    const cancelButton = document.getElementById("cancelButton");
+    const confirmModal = document.getElementById("confirmModal");
+    const confirmList = document.getElementById("confirmList");
+    const cancelConfirmButton = document.getElementById("cancelConfirmButton");
+    const confirmSubmitButton = document.getElementById("confirmSubmitButton");
+    const submitButton = document.getElementById("submitButton");
+
+    const state = {
+      accounts: [],
+      applications: [],
+      application: null,
+      confirmOpen: false,
+      draft: null
+    };
+
+    let lastFocusedElement = null;
+
+    function formatMockDate(offset) {
+      const date = new Date(Date.UTC(2026, 4, 20 - offset));
+      const day = String(date.getUTCDate()).padStart(2, "0");
+      const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+      const year = date.getUTCFullYear();
+      return `${day}-${month}-${year}`;
+    }
+
+    function createSampleApplications() {
+      return Array.from({ length: 100 }, (_, index) => ({
+        Id: `application-${String(index + 1).padStart(3, "0")}`,
+        Status: STATUS_OPTIONS[index % STATUS_OPTIONS.length],
+        JobRole: MOCK_ROLES[index % MOCK_ROLES.length],
+        AppliedDate: formatMockDate(index),
+        CompanyName: MOCK_COMPANIES[index % MOCK_COMPANIES.length],
+        Email: index % 4 === 0 ? "jobs+portfolio@gmail.com" : `candidate.${(index % 6) + 1}@gmail.com`
+      }));
+    }
+
+    function readStorage(key) {
+      try {
+        const raw = window.localStorage.getItem(key);
+        return raw ? JSON.parse(raw) : null;
+      } catch (error) {
+        return null;
+      }
+    }
+
+    function writeStorage(key, value) {
+      try {
+        window.localStorage.setItem(key, JSON.stringify(value));
+        return true;
+      } catch (error) {
+        return false;
+      }
+    }
+
+    function normalizeStoredStatus(status) {
+      const normalized = String(status ?? "").trim().toLowerCase();
+      switch (normalized) {
+        case "applied":
+          return "Applied";
+        case "interviewing":
+          return "Interviewing";
+        case "offer":
+        case "offered":
+          return "Offered";
+        case "candidate rejected":
+        case "candidate-rejected":
+          return "Candidate Rejected";
+        case "rejected":
+        case "company rejected":
+        case "company-rejected":
+          return "Company Rejected";
+        case "reviewing":
+          return "Interviewing";
+        default:
+          return "Applied";
+      }
+    }
+
+    function normalizeStoredApplication(application, index) {
+      return {
+        Id: application.Id ?? `application-${String(index + 1).padStart(3, "0")}`,
+        CompanyName: application.CompanyName ?? "Unknown company",
+        JobRole: application.JobRole ?? "Unknown role",
+        Status: normalizeStoredStatus(application.Status),
+        AppliedDate: application.AppliedDate ?? formatMockDate(index),
+        Email: application.Email ?? INITIAL_ACCOUNTS[0].label
+      };
+    }
+
+    function loadAccounts() {
+      const stored = readStorage(STORAGE_KEYS.accounts);
+      if (Array.isArray(stored) && stored.length > 0) {
+        return stored;
+      }
+      writeStorage(STORAGE_KEYS.accounts, INITIAL_ACCOUNTS);
+      return INITIAL_ACCOUNTS.map((account) => ({ ...account }));
+    }
+
+    function loadApplications() {
+      const stored = readStorage(STORAGE_KEYS.applications);
+      if (Array.isArray(stored) && stored.length > 0) {
+        const normalized = stored.map(normalizeStoredApplication);
+        writeStorage(STORAGE_KEYS.applications, normalized);
+        return normalized;
+      }
+      const seeded = createSampleApplications();
+      writeStorage(STORAGE_KEYS.applications, seeded);
+      return seeded;
+    }
+
+    function displayDateToInput(value) {
+      const [day, month, year] = value.split("-");
+      return `${year}-${month}-${day}`;
+    }
+
+    function inputDateToDisplay(value) {
+      const [year, month, day] = value.split("-");
+      return `${day}-${month}-${year}`;
+    }
+
+    function getQueryId() {
+      return new URLSearchParams(window.location.search).get("id");
+    }
+
+    function getEmailOptions(emailValue) {
+      const connectedEmails = state.accounts.map((account) => account.label);
+      const hasConnectedMatch = connectedEmails.includes(emailValue);
+      return {
+        connectedEmails,
+        selectedValue: hasConnectedMatch ? emailValue : "other",
+        otherValue: hasConnectedMatch ? "" : emailValue
+      };
+    }
+
+    function renderEmailSelect(emailValue) {
+      const { connectedEmails, selectedValue, otherValue } = getEmailOptions(emailValue);
+      emailSelect.innerHTML = "";
+
+      connectedEmails.forEach((email) => {
+        const option = document.createElement("option");
+        option.value = email;
+        option.textContent = email;
+        option.selected = email === selectedValue;
+        emailSelect.appendChild(option);
+      });
+
+      const otherOption = document.createElement("option");
+      otherOption.value = "other";
+      otherOption.textContent = "Other";
+      otherOption.selected = selectedValue === "other";
+      emailSelect.appendChild(otherOption);
+
+      otherEmail.value = otherValue;
+      syncOtherEmailVisibility();
+    }
+
+    function syncOtherEmailVisibility() {
+      const showOther = emailSelect.value === "other";
+      otherEmailGroup.classList.toggle("visually-hidden", !showOther);
+      otherEmail.required = showOther;
+      if (!showOther) {
+        otherEmail.value = "";
+      }
+    }
+
+    function renderPage() {
+      const hasApplication = Boolean(state.application);
+      editPanel.classList.toggle("visually-hidden", !hasApplication);
+      notFoundState.classList.toggle("visually-hidden", hasApplication);
+      syncConfirmModal();
+
+      if (!hasApplication) {
+        pageTitle.textContent = "Review and update the selected application.";
+        summaryCompany.textContent = "—";
+        summaryRole.textContent = "Waiting for the application details.";
+        summaryMeta.textContent = "Choose a record from the tracker to edit.";
+        return;
+      }
+
+      pageTitle.textContent = `Edit ${state.application.CompanyName}.`;
+      summaryCompany.textContent = state.application.CompanyName;
+      summaryRole.textContent = state.application.JobRole;
+      summaryMeta.textContent = `${state.application.Status} · ${state.application.AppliedDate} · ${state.application.Email}`;
+    }
+
+    function syncConfirmModal() {
+      const isOpen = state.confirmOpen;
+      confirmModal.hidden = !isOpen;
+      confirmModal.setAttribute("aria-hidden", String(!isOpen));
+      document.body.classList.toggle("modal-open", isOpen);
+    }
+
+    function seedForm() {
+      if (!state.application) {
+        return;
+      }
+
+      companyName.value = state.application.CompanyName;
+      jobRole.value = state.application.JobRole;
+      statusField.value = state.application.Status;
+      appliedDate.value = displayDateToInput(state.application.AppliedDate);
+      renderEmailSelect(state.application.Email);
+      renderPage();
+    }
+
+    function collectDraft() {
+      const selectedEmail = emailSelect.value === "other" ? otherEmail.value.trim() : emailSelect.value;
+      return {
+        ...state.application,
+        CompanyName: companyName.value.trim(),
+        JobRole: jobRole.value.trim(),
+        Status: statusField.value,
+        AppliedDate: inputDateToDisplay(appliedDate.value),
+        Email: selectedEmail
+      };
+    }
+
+    function validateForm() {
+      if (!editForm.reportValidity()) {
+        return false;
+      }
+
+      if (emailSelect.value === "other" && !otherEmail.value.trim()) {
+        otherEmail.setCustomValidity("Enter an email address.");
+        otherEmail.reportValidity();
+        return false;
+      }
+
+      otherEmail.setCustomValidity("");
+      return true;
+    }
+
+    function openConfirmModal() {
+      if (!validateForm()) {
+        return;
+      }
+
+      state.draft = collectDraft();
+      confirmList.innerHTML = "";
+      [
+        ["Company", state.draft.CompanyName],
+        ["Role", state.draft.JobRole],
+        ["Status", state.draft.Status],
+        ["Applied date", state.draft.AppliedDate],
+        ["Email", state.draft.Email]
+      ].forEach(([label, value]) => {
+        const item = document.createElement("li");
+        const strong = document.createElement("strong");
+        strong.textContent = `${label}: `;
+        item.append(strong, document.createTextNode(value));
+        confirmList.appendChild(item);
+      });
+      state.confirmOpen = true;
+      lastFocusedElement = document.activeElement;
+      renderPage();
+      window.requestAnimationFrame(() => confirmSubmitButton.focus());
+    }
+
+    function closeConfirmModal() {
+      state.confirmOpen = false;
+      renderPage();
+      if (lastFocusedElement instanceof HTMLElement) {
+        lastFocusedElement.focus();
+      }
+    }
+
+    function persistChanges() {
+      if (!state.draft) {
+        return;
+      }
+
+      state.applications = state.applications.map((application) => {
+        return application.Id === state.draft.Id ? state.draft : application;
+      });
+      writeStorage(STORAGE_KEYS.applications, state.applications);
+      writeStorage(STORAGE_KEYS.flash, `Saved changes for ${state.draft.CompanyName}.`);
+      window.location.href = "job-applications-tracker.html";
+    }
+
+    function init() {
+      state.accounts = loadAccounts();
+      state.applications = loadApplications();
+      const targetId = getQueryId();
+      state.application = state.applications.find((application) => application.Id === targetId) ?? null;
+
+      if (!state.application) {
+        statusNote.textContent = "The requested application is no longer available.";
+        renderPage();
+        return;
+      }
+
+      seedForm();
+    }
+
+    emailSelect.addEventListener("change", () => {
+      otherEmail.setCustomValidity("");
+      syncOtherEmailVisibility();
+    });
+    otherEmail.addEventListener("input", () => {
+      otherEmail.setCustomValidity("");
+    });
+
+    cancelButton.addEventListener("click", () => {
+      window.location.href = "job-applications-tracker.html";
+    });
+
+    submitButton.addEventListener("click", (event) => {
+      event.preventDefault();
+      openConfirmModal();
+    });
+
+    editForm.addEventListener("submit", (event) => {
+      event.preventDefault();
+      openConfirmModal();
+    });
+
+    cancelConfirmButton.addEventListener("click", closeConfirmModal);
+    confirmSubmitButton.addEventListener("click", persistChanges);
+    confirmModal.addEventListener("click", (event) => {
+      if (event.target === confirmModal) {
+        closeConfirmModal();
+      }
+    });
+    window.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && state.confirmOpen) {
+        closeConfirmModal();
+      }
+    });
+
+    init();
+  </script>
+</body>
+</html>
