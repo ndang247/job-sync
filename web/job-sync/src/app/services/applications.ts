@@ -5,11 +5,31 @@ import * as signalR from '@microsoft/signalr';
 import { StorageService } from './storage/storage';
 
 export interface JobApplication {
+  id: string;
   companyName: string;
   jobRole: string;
   email: string;
   status: 'applied';
   appliedDate: string;
+}
+
+interface JobApplicationResponse {
+  id: string;
+  companyName: string;
+  jobRole: string;
+  email: string;
+  appliedDate: string;
+  status: string;
+}
+
+interface ApplicationsPageResponse {
+  items: JobApplicationResponse[];
+  page: number;
+  pageSize: number;
+  totalCount: number;
+  totalPages: number;
+  hasPrevious: boolean;
+  hasNext: boolean;
 }
 
 export interface GoogleAccount {
@@ -26,11 +46,6 @@ export interface SyncState {
 
 const PAGE_SIZE = 10;
 
-function parseAppliedDate(value: string): number {
-  const [day, month, year] = value.split('-').map(Number);
-  return new Date(year, month - 1, day).getTime();
-}
-
 const API_BASE_URL = 'http://localhost:5084';
 const LAST_SYNC_KEY = 'lastSyncTimestamp';
 
@@ -46,6 +61,11 @@ export class ApplicationsService {
   readonly loading = signal(true);
   readonly searchQuery = signal('');
   readonly currentPage = signal(1);
+  readonly pageSize = signal(PAGE_SIZE);
+  readonly totalCount = signal(0);
+  readonly totalPages = signal(1);
+  readonly hasPrevious = signal(false);
+  readonly hasNext = signal(false);
   readonly accounts = signal<GoogleAccount[]>([]);
   readonly lastSyncLabel = signal(this.getStoredSyncLabel());
   readonly statusNote = signal('');
@@ -55,11 +75,9 @@ export class ApplicationsService {
 
   readonly filteredApplications = computed(() => {
     const query = this.searchQuery().trim().toLowerCase();
-    const sorted = [...this.applications()].sort(
-      (a, b) => parseAppliedDate(b.appliedDate) - parseAppliedDate(a.appliedDate),
-    );
-    if (!query) return sorted;
-    return sorted.filter((app) => {
+    const applications = this.applications();
+    if (!query) return applications;
+    return applications.filter((app) => {
       const haystack = [app.companyName, app.jobRole, app.email, app.status, app.appliedDate]
         .join(' ')
         .toLowerCase();
@@ -67,43 +85,41 @@ export class ApplicationsService {
     });
   });
 
-  readonly totalPages = computed(() =>
-    Math.max(1, Math.ceil(this.filteredApplications().length / PAGE_SIZE)),
-  );
-
   readonly safePage = computed(() => Math.min(this.currentPage(), this.totalPages()));
 
   readonly pageItems = computed(() => {
-    const start = (this.safePage() - 1) * PAGE_SIZE;
-    return this.filteredApplications().slice(start, start + PAGE_SIZE);
+    return this.filteredApplications();
   });
 
   readonly paginationStart = computed(() => {
-    if (this.filteredApplications().length === 0) return 0;
-    return (this.safePage() - 1) * PAGE_SIZE + 1;
+    if (this.pageItems().length === 0) return 0;
+    return (this.safePage() - 1) * this.pageSize() + 1;
   });
 
   readonly paginationEnd = computed(() => {
-    if (this.filteredApplications().length === 0) return 0;
-    return (this.safePage() - 1) * PAGE_SIZE + this.pageItems().length;
+    if (this.pageItems().length === 0) return 0;
+    return this.paginationStart() + this.pageItems().length - 1;
   });
 
-  loadApplications(): void {
+  loadApplications(page = 1): void {
     this.loading.set(true);
     this.http
-      .get<
-        {
-          companyName: string;
-          jobRole: string;
-          email: string;
-          appliedDate: string;
-          status: string;
-        }[]
-      >(`${API_BASE_URL}/api/v1/applications`)
+      .get<ApplicationsPageResponse>(`${API_BASE_URL}/api/v1/applications`, {
+        params: {
+          page: String(page),
+          pageSize: String(PAGE_SIZE),
+        },
+      })
       .subscribe({
-        next: (applications) => {
+        next: (response) => {
+          if (response.items.length === 0 && response.totalCount > 0 && page > response.totalPages) {
+            this.loadApplications(response.totalPages);
+            return;
+          }
+
           this.applications.set(
-            applications.map((application) => ({
+            response.items.map((application) => ({
+              id: application.id,
               companyName: application.companyName,
               jobRole: application.jobRole,
               email: application.email,
@@ -111,7 +127,12 @@ export class ApplicationsService {
               status: application.status.toLowerCase() as JobApplication['status'],
             })),
           );
-          this.currentPage.set(1);
+          this.currentPage.set(response.page);
+          this.pageSize.set(response.pageSize);
+          this.totalCount.set(response.totalCount);
+          this.totalPages.set(response.totalPages);
+          this.hasPrevious.set(response.hasPrevious);
+          this.hasNext.set(response.hasNext);
           this.loading.set(false);
         },
         error: () => {
@@ -174,7 +195,7 @@ export class ApplicationsService {
       });
 
       connection.on('SyncCompleted', () => {
-        this.loadApplications();
+        this.loadApplications(1);
         this.syncState.set({ syncing: false, progress: 0, stage: '', caption: '' });
         const now = new Date();
         this.storage.setItem(LAST_SYNC_KEY, now.toISOString());
@@ -226,18 +247,17 @@ export class ApplicationsService {
 
   search(query: string): void {
     this.searchQuery.set(query);
-    this.currentPage.set(1);
   }
 
   previousPage(): void {
-    if (this.safePage() > 1) {
-      this.currentPage.update((p) => p - 1);
+    if (this.hasPrevious()) {
+      this.loadApplications(this.safePage() - 1);
     }
   }
 
   nextPage(): void {
-    if (this.safePage() < this.totalPages()) {
-      this.currentPage.update((p) => p + 1);
+    if (this.hasNext()) {
+      this.loadApplications(this.safePage() + 1);
     }
   }
 }

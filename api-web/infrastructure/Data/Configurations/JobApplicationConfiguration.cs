@@ -19,6 +19,9 @@ public class JobApplicationConfiguration : IEntityTypeConfiguration<JobApplicati
             .HasMaxLength(30)
             .IsRequired();
         builder.HasIndex(ja => ja.MessageId).IsUnique();
+        builder.HasIndex(ja => new { ja.CreatedAt, ja.Id })
+            .IsDescending(true, true)
+            .HasFilter("\"DeletedAt\" IS NULL");
         builder.HasOne(ja => ja.EmailConnection)
             .WithMany()
             .HasForeignKey(ja => ja.EmailConnectionId)

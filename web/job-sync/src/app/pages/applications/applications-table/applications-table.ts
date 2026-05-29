@@ -13,22 +13,21 @@ export class ApplicationsTable {
 
   protected readonly summary = computed(() => {
     if (this.service.loading()) return 'Loading the latest applications from your server…';
-    const apps = this.service.applications();
     const filtered = this.service.filteredApplications();
     const query = this.service.searchQuery().trim();
-    if (apps.length === 0)
+    if (this.service.totalCount() === 0)
       return 'The server is connected, but there are no job applications to show yet.';
     if (filtered.length === 0)
-      return `${apps.length} applications are available, but nothing matches "${query}".`;
+      return `No rows on this page match "${query}".`;
     if (query) {
-      return `${filtered.length} ${filtered.length === 1 ? 'match' : 'matches'} for "${query}". Showing ${this.service.paginationStart()}–${this.service.paginationEnd()} on page ${this.service.safePage()} of ${this.service.totalPages()}.`;
+      return `${filtered.length} ${filtered.length === 1 ? 'match' : 'matches'} for "${query}" on this page. Showing ${this.service.paginationStart()}–${this.service.paginationEnd()} on page ${this.service.safePage()} of ${this.service.totalPages()}.`;
     }
-    return `${apps.length} ${apps.length === 1 ? 'application' : 'applications'} currently stored on the server. Showing the latest ${this.service.paginationStart()}–${this.service.paginationEnd()}.`;
+    return `${this.service.totalCount()} ${this.service.totalCount() === 1 ? 'application' : 'applications'} currently stored on the server. Showing the latest ${this.service.paginationStart()}–${this.service.paginationEnd()}.`;
   });
 
   protected readonly resultCountText = computed(() => {
     if (this.service.loading()) return 'Loading rows…';
-    return `${this.service.filteredApplications().length} total rows`;
+    return `${this.service.totalCount()} total rows`;
   });
 
   protected readonly showLoading = computed(() => this.service.loading());

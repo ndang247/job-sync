@@ -1,258 +1,166 @@
 # Job Sync Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> Last updated: 2026-05-28 (aligned to current `api-web` code)
 
-**Goal:** Build a .NET 10 REST API that syncs job applications from multiple email connections per user via OpenAI GPT classification.
+## Goal
 
-**Architecture:** Connection-scoped async pipeline — client starts sync with `userId` + `emailConnectionId`, API enqueues a sync job, channel-based background worker processes jobs concurrently, mints short-lived Gmail access tokens from stored refresh tokens at runtime, classifies/deduplicates emails with OpenAI GPT, and persists results in PostgreSQL. SignalR provides real-time progress; status polling remains a fallback. Reconnect-required conditions (missing/revoked/invalid grant) are surfaced via API conflict responses and failed job state.
+Keep the implementation plan synchronized with the shipped .NET 10 API behavior so this file is a reliable execution and maintenance reference.
 
-**Tech Stack:** .NET 10, ASP.NET Core Web API, EF Core + Npgsql (PostgreSQL), Google.Apis.Gmail.v1, OpenAI .NET SDK (GPT-4o-mini), BackgroundService + Channel<T>, SignalR, xUnit + WebApplicationFactory + NSubstitute (integration tests)
+## Current Architecture (Implemented)
 
----
+- Connection-scoped async pipeline: client starts sync with `emailConnectionId` only.
+- API writes job IDs into an in-memory `Channel<Guid>`.
+- Background worker (`BackgroundService`) consumes channel messages and processes jobs concurrently.
+- Gmail access token is minted at runtime from stored refresh token.
+- OpenAI classifies and deduplicates job applications.
+- Sync results are persisted in two places:
+  - `SyncJob.Result` (`jsonb`) as job snapshot output.
+  - `JobApplications` table as normalized persisted rows.
+- SignalR pushes real-time progress; HTTP status polling remains fallback.
 
-## File Structure
+## Tech Stack (Implemented)
 
-```
+- .NET 10 / ASP.NET Core Web API
+- EF Core 10 + Npgsql (PostgreSQL)
+- Google.Apis.Gmail.v1
+- OpenAI .NET SDK (`OpenAI` package)
+- BackgroundService + Channel<T>
+- SignalR
+- xUnit + WebApplicationFactory + NSubstitute (integration tests)
+
+## Current File Structure Snapshot
+
+```text
 api-web/
-├── api-web.slnx
-├── .githooks/
-│   ├── pre-commit
-│   ├── pre-push
-│   └── run-checks.sh
 ├── api-contracts/
-│   ├── Requests/
-│   │   └── StartSyncRequest.cs
-│   └── api-contracts.csproj
-├── web-api/
-│   ├── Program.cs
-│   ├── appsettings.json
-│   ├── appsettings.Development.json
-│   ├── Controllers/
-│   │   ├── MailConnectController.cs
-│   │   └── SyncController.cs
-│   ├── Hubs/
-│   │   └── SyncHub.cs
-│   ├── Services/
-│   │   └── SyncHubNotifier.cs
-│   └── web-api.csproj
+│   └── Requests/
+│       └── StartSyncRequest.cs
 ├── core/
 │   ├── Entities/
 │   │   ├── BaseEntity.cs
 │   │   ├── User.cs
 │   │   ├── EmailConnection.cs
-│   │   └── SyncJob.cs
-│   ├── Enums/
-│   │   ├── EmailConnectionStatus.cs
-│   │   └── SyncJobStatus.cs
-│   ├── Models/
+│   │   ├── SyncJob.cs
 │   │   └── JobApplication.cs
+│   ├── Enums/
+│   │   ├── EmailConnectionProvider.cs
+│   │   ├── EmailConnectionStatus.cs
+│   │   ├── SyncJobStatus.cs
+│   │   └── JobApplicationStatus.cs
 │   ├── Interfaces/
 │   │   ├── IEmailService.cs
 │   │   ├── IAIService.cs
 │   │   ├── IGoogleTokenExchanger.cs
+│   │   ├── IJobApplicationService.cs
 │   │   ├── ISyncOrchestrator.cs
 │   │   ├── ISyncProgressReporter.cs
 │   │   ├── ISyncHubNotifier.cs
 │   │   └── ISyncJobChannel.cs
-│   └── core.csproj
+│   └── Models/
+│       └── JobApplication.cs
 ├── infrastructure/
 │   ├── Data/
 │   │   ├── AppDbContext.cs
 │   │   ├── Configurations/
 │   │   │   ├── UserConfiguration.cs
 │   │   │   ├── EmailConnectionConfiguration.cs
-│   │   │   └── SyncJobConfiguration.cs
+│   │   │   ├── SyncJobConfiguration.cs
+│   │   │   └── JobApplicationConfiguration.cs
 │   │   └── Migrations/
 │   │       ├── 20260510042549_InitialCreate.cs
-│   │       ├── 20260510042549_InitialCreate.Designer.cs
 │   │       ├── 20260515130449_AddEmailConnections.cs
-│   │       ├── 20260515130449_AddEmailConnections.Designer.cs
-│   │       └── AppDbContextModelSnapshot.cs
-│   ├── Services/
-│   │   ├── GmailService.cs
-│   │   ├── OpenAIService.cs
-│   │   ├── GoogleTokenExchanger.cs
-│   │   ├── SyncOrchestrator.cs
-│   │   ├── SyncProgressReporter.cs
-│   │   └── SyncJobChannel.cs
-│   └── infrastructure.csproj
-├── scripts/
-│   └── setup-git-hooks.sh
-├── tests/
-│   └── web-api.IntegrationTests/
-│       ├── Controllers/
-│       │   ├── MailConnectControllerTests.cs
-│       │   └── SyncControllerTests.cs
-│       ├── CustomWebApplicationFactory.cs
-│       └── web-api.IntegrationTests.csproj
-└── worker/
-    ├── SyncBackgroundService.cs
-    └── worker.csproj
+│   │       ├── 20260518135657_AddEmailConnectionProvider.cs
+│   │       ├── 20260518135912_EmailConnectionProviderAsString.cs
+│   │       └── 20260521053032_AddJobApplication.cs
+│   └── Services/
+│       ├── GmailService.cs
+│       ├── OpenAIService.cs
+│       ├── GoogleTokenExchanger.cs
+│       ├── JobApplicationService.cs
+│       ├── SyncOrchestrator.cs
+│       ├── SyncProgressReporter.cs
+│       └── SyncJobChannel.cs
+├── web-api/
+│   ├── Program.cs
+│   ├── appsettings.json
+│   ├── Controllers/
+│   │   ├── MailConnectController.cs
+│   │   ├── SyncController.cs
+│   │   ├── ConnectionsController.cs
+│   │   └── ApplicationsController.cs
+│   ├── Hubs/
+│   │   └── SyncHub.cs
+│   └── Services/
+│       └── SyncHubNotifier.cs
+├── worker/
+│   └── SyncBackgroundService.cs
+└── tests/
+        └── web-api.IntegrationTests/
+                ├── Controllers/
+                │   ├── MailConnectControllerTests.cs
+                │   └── SyncControllerTests.cs
+                └── CustomWebApplicationFactory.cs
 ```
 
----
+## Implementation Status
 
-## Task 1: Solution Scaffolding ✅ COMPLETED
+### Platform and Wiring
 
-- [x] Scaffold API, domain, infrastructure, and worker projects.
-- [x] Add all projects to `api-web.slnx`.
-- [x] Confirm project references follow API -> worker -> infrastructure -> core.
+- [x] Solution and project graph are in place.
+- [x] Program startup wires controllers, SignalR, session, CORS, EF Core, channel, and hosted worker.
+- [x] Swagger is enabled in Development.
 
----
+### Domain and Persistence
 
-## Task 2: Core Domain Models ✅ COMPLETED
+- [x] `User`, `EmailConnection`, `SyncJob`, `JobApplication` entities are implemented.
+- [x] Email connection provider/status enums are implemented.
+- [x] Sync jobs are connection-scoped (`EmailConnectionId`).
+- [x] `JobApplications` are persisted and deduplicated by `MessageId` per connection in service logic.
 
-- [x] Create base entities and job application model.
-- [x] Add sync job status enum.
-- [x] Keep namespaces and folder structure consistent with `core` conventions.
+### OAuth and Connections
 
----
+- [x] Gmail OAuth start + callback endpoints implemented.
+- [x] OAuth `state` is generated and validated using session.
+- [x] Callback uses `IGoogleTokenExchanger` and upserts by `SubjectId`.
+- [x] Existing connection reconnect path sets status back to `Active` on successful callback.
 
-## Task 3: Core Interfaces ✅ COMPLETED
+### Sync Runtime
 
-- [x] Define core service contracts for email, AI, orchestration, and progress reporting.
-- [x] Keep orchestrator contract aligned with job-scoped execution.
+- [x] Start sync endpoint accepts `emailConnectionId` and enqueues channel work.
+- [x] Active-job conflict guard enforced per connection (`Pending` or `Processing`).
+- [x] Worker recovers orphaned jobs on startup and processes each job in its own DI scope.
+- [x] Progress stages and SignalR events are emitted.
+- [x] Invalid grant in Gmail refresh flow marks connection `NeedsReconnect` and fails the job.
 
----
+### Read APIs
 
-## Task 4: Database Context and Entity Configuration ✅ COMPLETED
+- [x] `GET /api/v1/sync/status/{jobId}` implemented.
+- [x] `GET /api/v1/connections` implemented.
+- [x] `GET /api/v1/applications` implemented.
 
-- [x] Create `AppDbContext` with required DbSets.
-- [x] Add entity configurations for user, sync job, and related mappings.
-- [x] Ensure EF mappings align with current domain model.
+### Test Coverage (Current)
 
----
+- [x] Integration tests cover mail connect start/callback, subject-id upsert behavior, and sync start/status conflicts.
+- [x] Integration tests cover connection-scoped active-job conflicts and concurrent sync across different connections.
+- [ ] Focused unit tests are still missing for:
+  - `GmailService` token/grant error edges.
+  - `OpenAIService` malformed response handling.
+  - `SyncOrchestrator` progress/batch behavior.
 
-## Task 5: PostgreSQL Wiring and Migrations ✅ COMPLETED
+## Open Work Backlog
 
-- [x] Configure connection string + EF Core Npgsql in API startup.
-- [x] Initialize user secrets for local development.
-- [x] Add EF design-time tooling.
-- [x] Create and apply initial migration.
-- [x] Verify DB connectivity and successful build.
+### Task 20: Verification Pass
 
----
+- [ ] Run full test suite and record results in this document.
+- [ ] Start the API locally and verify Swagger responds.
+- [ ] Resolve any regressions and update this plan after verification.
 
-## Task 6: Gmail Service (Runtime Token Flow) ✅ COMPLETED
+### Task 21: Unit Test Additions
 
-- [x] Implement Gmail fetch flow with OAuth refresh handling, paging, and MIME/body parsing.
-- [x] Limit fetch scope to recent mail window used by sync pipeline.
-- [x] Add/keep Gmail API package dependency.
-- [ ] Add focused unit tests for error handling and token/grant edge cases.
+- [ ] Add `infrastructure`-level unit tests for Gmail invalid grant and reconnect transition.
+- [ ] Add OpenAI response parse failure tests.
+- [ ] Add orchestrator batch/progress unit tests.
 
----
+### Task 22: Documentation Guardrail
 
-## Task 7: AI Service (OpenAI) ✅ COMPLETED
-
-- [x] Implement batch classification and final deduplication flow.
-- [x] Standardize prompt/response handling to JSON-only parsing with safe fallback.
-- [x] Add OpenAI .NET SDK dependency (replaced Google_GenerativeAI).
-- [ ] Add focused unit tests for empty inputs and malformed response handling.
-
----
-
-## Task 8: Sync Orchestrator with Progress Reporting ✅ COMPLETED
-
-- [x] Implement batch orchestration across email fetch, AI classify, and deduplicate.
-- [x] Emit stage-based progress updates throughout job execution.
-- [ ] Add orchestrator unit tests for batch behavior and progress events.
-
----
-
-## Task 9: Channel-Based Background Worker ✅ COMPLETED
-
-- [x] Introduce job channel abstraction and implementation.
-- [x] Move worker from polling to channel-driven processing.
-- [x] Process jobs in isolated DI scopes and recover orphaned active jobs at startup.
-- [x] Persist success/failure state and notify progress channel.
-
----
-
-## Task 10: Mail Connect Controller ✅ COMPLETED
-
-- [x] Expose `gmail/start` (redirect to Google) and `gmail/callback` (receive code, exchange tokens, redirect to frontend) endpoints.
-- [x] Backend-driven OAuth flow: user identity (name, email) extracted from Google ID token — no frontend form needed.
-- [x] User deduplication by `SubjectId` — same Google account always maps to the same user.
-- [x] Decouple token exchange via `IGoogleTokenExchanger` for testability.
-
----
-
-## Task 11: Sync Controller ✅ COMPLETED
-
-- [x] Create sync job endpoint with user validation.
-- [x] Enforce active-job conflict handling.
-- [x] Enqueue jobs to channel for immediate background processing.
-- [x] Expose status endpoint with `status`, `progress`, `stage`, `result`, and `error`.
-
----
-
-## Task 12: Application Configuration ✅ COMPLETED
-
-- [x] Add Google and database config sections in app settings.
-- [x] Keep secret values externalized via user secrets/environment.
-
----
-
-## Task 13: SignalR Hub and Progress Notification ✅ COMPLETED
-
-- [x] Add sync hub with job-group join/leave behavior.
-- [x] Implement notifier abstraction and SignalR-backed notifier.
-- [x] Implement progress reporter that persists progress and broadcasts updates.
-
----
-
-## Task 14: Program Startup and DI Wiring ✅ COMPLETED
-
-- [x] Register controllers, EF Core, SignalR, CORS, and hosted worker.
-- [x] Register email/AI/orchestrator/progress/notifier/channel services.
-- [x] Register token exchanger and expose partial `Program` for integration tests.
-
----
-
-## Task 15: Controller Integration Tests ✅ COMPLETED
-
-- [x] Create integration test project with in-memory DB host customization.
-- [x] Add mail connect endpoint integration tests.
-- [x] Add sync endpoint integration tests (start/status/conflict/not-found scenarios).
-- [x] Ensure test host replaces external dependencies (token exchanger/channel/worker behavior).
-
----
-
-## Task 16: Multi-Connection Schema Foundation ✅ COMPLETED
-
-- [x] Add `EmailConnection` entity and status enum.
-- [x] Add email connection configuration and relationships.
-- [x] Add migration for email connection schema changes.
-
----
-
-## Task 17: Backlog Cleanup and Commit Hygiene
-
-- [ ] Close or remove stale checkboxes that no longer represent real work.
-- [ ] Keep only actionable remaining items in open-state tasks.
-- [ ] Group future work under Task 19+ to avoid duplicate tracking.
-
----
-
-## Task 18: Final Integration Verification
-
-- [ ] Run full test suite and confirm all tests pass.
-- [ ] Start the API locally and verify Swagger endpoint responds successfully.
-- [ ] Fix any failing tests or startup issues before final verification.
-- [ ] Create verification commit after all checks are green.
-
----
-
-## Task 19: Multi-Connection + Security Uplift (2026-05-15)
-
-> Update existing implementation to support multiple Gmail connections per user and remove persisted access tokens. Sync must run against a selected `emailConnectionId`, mint access token at runtime from refresh token, and return reconnect-required errors when connection is missing/revoked/expired.
-
-- [ ] Add/adjust integration tests first for connection creation/upsert, ownership validation, reconnect-required conflicts, and per-connection job conflict behavior.
-- [ ] Run focused integration tests and confirm expected RED state before implementation.
-- [ ] Update domain model to remove persisted access tokens from users and model email connections explicitly.
-- [ ] Update schema/mappings/migrations for `EmailConnection` and connection-scoped sync jobs.
-- [ ] Update API contracts and controllers for `emailConnectionId`-scoped sync and reconnect-required responses.
-- [ ] Update Gmail runtime auth flow to mint access tokens from refresh token only.
-- [ ] Ensure invalid grant/revoked token paths mark connection as `NeedsReconnect` and fail job with clear error.
-- [ ] Run focused integration tests, then full tests/build, and confirm GREEN.
-- [ ] Commit after verification passes.
+- [ ] On each behavior change, update both `docs/superpowers/plans/2026-05-06-job-sync-implementation.md` and `docs/superpowers/specs/2026-05-06-job-sync-design.md` in the same PR.

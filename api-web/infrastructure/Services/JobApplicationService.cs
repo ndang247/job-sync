@@ -8,10 +8,12 @@ namespace infrastructure.Services;
 public class JobApplicationService : IJobApplicationService
 {
     private readonly AppDbContext _dbContext;
+    private readonly IApplicationListCacheState _applicationListCacheState;
 
-    public JobApplicationService(AppDbContext dbContext)
+    public JobApplicationService(AppDbContext dbContext, IApplicationListCacheState applicationListCacheState)
     {
         _dbContext = dbContext;
+        _applicationListCacheState = applicationListCacheState;
     }
 
     public async Task AddApplicationsAsync(Guid emailConnectionId, List<JobApplication> applications, CancellationToken cancellationToken = default)
@@ -32,14 +34,20 @@ public class JobApplicationService : IJobApplicationService
             .Select(ja => ja.MessageId)
             .ToHashSetAsync(cancellationToken);
 
+        var added = false;
         foreach (var app in applications)
         {
             if (existingMessageIds.Contains(app.MessageId))
                 continue;
             app.EmailConnectionId = emailConnectionId;
             _dbContext.JobApplications.Add(app);
+            added = true;
         }
 
+        if (!added)
+            return;
+
         await _dbContext.SaveChangesAsync(cancellationToken);
+        _applicationListCacheState.Invalidate();
     }
 }

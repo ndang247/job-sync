@@ -3,6 +3,9 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using core.Entities;
 using core.Enums;
+using core.Interfaces;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace web_api.IntegrationTests.Controllers;
 
@@ -14,7 +17,20 @@ public class ApplicationsControllerTests : IClassFixture<CustomWebApplicationFac
     public ApplicationsControllerTests(CustomWebApplicationFactory factory)
     {
         _factory = factory;
+        ResetDatabase();
         _client = factory.CreateClient();
+    }
+
+    private void ResetDatabase()
+    {
+        using var db = _factory.CreateDbContext();
+        db.JobApplications.RemoveRange(db.JobApplications.IgnoreQueryFilters());
+        db.SyncJobs.RemoveRange(db.SyncJobs.IgnoreQueryFilters());
+        db.EmailConnections.RemoveRange(db.EmailConnections);
+        db.Users.RemoveRange(db.Users);
+        db.SaveChanges();
+
+        _factory.Services.GetRequiredService<IApplicationListCacheState>().Invalidate();
     }
 
     [Fact]
@@ -25,7 +41,8 @@ public class ApplicationsControllerTests : IClassFixture<CustomWebApplicationFac
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
         var content = await response.Content.ReadFromJsonAsync<JsonElement>();
-        Assert.Equal(JsonValueKind.Array, content.ValueKind);
+        Assert.Equal(JsonValueKind.Object, content.ValueKind);
+        Assert.Equal(JsonValueKind.Array, content.GetProperty("items").ValueKind);
     }
 
     [Fact]
@@ -65,9 +82,9 @@ public class ApplicationsControllerTests : IClassFixture<CustomWebApplicationFac
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
-        var content = await response.Content.ReadFromJsonAsync<JsonElement>();
-        var companies = Enumerable.Range(0, content.GetArrayLength())
-            .Select(i => content[i].GetProperty("companyName").GetString())
+        var items = await ReadItemsAsync(response);
+        var companies = Enumerable.Range(0, items.GetArrayLength())
+            .Select(i => items[i].GetProperty("companyName").GetString())
             .ToList();
         Assert.Contains("Acme Corp", companies);
         Assert.Contains("Globex Inc", companies);
@@ -95,8 +112,8 @@ public class ApplicationsControllerTests : IClassFixture<CustomWebApplicationFac
         }
 
         var response = await _client.GetAsync("/api/v1/applications");
-        var content = await response.Content.ReadFromJsonAsync<JsonElement>();
-        var item = content[0];
+        var items = await ReadItemsAsync(response);
+        var item = items[0];
 
         Assert.Equal("TestCo", item.GetProperty("companyName").GetString());
         Assert.Equal("Fullstack Dev", item.GetProperty("jobRole").GetString());
@@ -149,9 +166,10 @@ public class ApplicationsControllerTests : IClassFixture<CustomWebApplicationFac
 
         var response = await _client.GetAsync("/api/v1/applications");
         var content = await response.Content.ReadFromJsonAsync<JsonElement>();
+        var items = content.GetProperty("items");
 
-        var companies = Enumerable.Range(0, content.GetArrayLength())
-            .Select(i => content[i].GetProperty("companyName").GetString())
+        var companies = Enumerable.Range(0, items.GetArrayLength())
+            .Select(i => items[i].GetProperty("companyName").GetString())
             .ToList();
         var olderIdx = companies.IndexOf(olderName);
         var newerIdx = companies.IndexOf(newerName);
@@ -192,10 +210,10 @@ public class ApplicationsControllerTests : IClassFixture<CustomWebApplicationFac
         }
 
         var response = await _client.GetAsync("/api/v1/applications");
-        var content = await response.Content.ReadFromJsonAsync<JsonElement>();
+        var items = await ReadItemsAsync(response);
 
-        var companies = Enumerable.Range(0, content.GetArrayLength())
-            .Select(i => content[i].GetProperty("companyName").GetString())
+        var companies = Enumerable.Range(0, items.GetArrayLength())
+            .Select(i => items[i].GetProperty("companyName").GetString())
             .ToList();
         Assert.Contains("ActiveCo", companies);
         Assert.DoesNotContain("DeletedCo", companies);
@@ -222,9 +240,154 @@ public class ApplicationsControllerTests : IClassFixture<CustomWebApplicationFac
         }
 
         var response = await _client.GetAsync("/api/v1/applications");
-        var content = await response.Content.ReadFromJsonAsync<JsonElement>();
+        var items = await ReadItemsAsync(response);
 
-        Assert.Equal("jobs@example.com", content[0].GetProperty("email").GetString());
+        Assert.Equal("jobs@example.com", items[0].GetProperty("email").GetString());
+    }
+
+    [Fact]
+    public async Task GetAll_DefaultPagination_ReturnsMetadataAndTenItems()
+    {
+        var connId = await SeedConnectionAsync();
+        var testKey = Guid.NewGuid().ToString("N");
+
+        await SeedApplicationsAsync(connId, testKey, 12, new DateTime(2030, 1, 1, 0, 0, 0, DateTimeKind.Utc));
+
+        var response = await _client.GetAsync("/api/v1/applications");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var content = await response.Content.ReadFromJsonAsync<JsonElement>();
+        var items = content.GetProperty("items");
+        Assert.Equal(10, items.GetArrayLength());
+        Assert.Equal(1, content.GetProperty("page").GetInt32());
+        Assert.Equal(10, content.GetProperty("pageSize").GetInt32());
+        Assert.True(content.GetProperty("totalCount").GetInt32() >= 12);
+        Assert.True(content.GetProperty("totalPages").GetInt32() >= 2);
+        Assert.False(content.GetProperty("hasPrevious").GetBoolean());
+        Assert.True(content.GetProperty("hasNext").GetBoolean());
+    }
+
+    [Fact]
+    public async Task GetAll_PageTwo_ReturnsNextOrderedSlice()
+    {
+        var connId = await SeedConnectionAsync();
+        var testKey = Guid.NewGuid().ToString("N");
+
+        await SeedApplicationsAsync(connId, testKey, 12, new DateTime(2031, 1, 1, 0, 0, 0, DateTimeKind.Utc));
+
+        var response = await _client.GetAsync("/api/v1/applications?page=2&pageSize=5");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var content = await response.Content.ReadFromJsonAsync<JsonElement>();
+        var items = content.GetProperty("items");
+        var companies = Enumerable.Range(0, items.GetArrayLength())
+            .Select(i => items[i].GetProperty("companyName").GetString())
+            .ToList();
+
+        Assert.Equal(2, content.GetProperty("page").GetInt32());
+        Assert.Equal(5, content.GetProperty("pageSize").GetInt32());
+        Assert.True(content.GetProperty("hasPrevious").GetBoolean());
+        Assert.Contains($"{testKey}-Company-05", companies);
+        Assert.Contains($"{testKey}-Company-09", companies);
+        Assert.DoesNotContain($"{testKey}-Company-00", companies);
+    }
+
+    [Fact]
+    public async Task GetAll_PageSizeIsCappedAtOneHundred()
+    {
+        var response = await _client.GetAsync("/api/v1/applications?pageSize=500");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var content = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal(100, content.GetProperty("pageSize").GetInt32());
+    }
+
+    [Fact]
+    public async Task GetAll_CacheIsInvalidatedAfterServiceAddsApplications()
+    {
+        var connId = await SeedConnectionAsync();
+        var testKey = Guid.NewGuid().ToString("N");
+        var messageId = $"msg-cache-{testKey}";
+
+        await SeedApplicationsAsync(connId, $"{testKey}-existing", 1, new DateTime(2034, 1, 1, 0, 0, 0, DateTimeKind.Utc));
+        await _client.GetAsync("/api/v1/applications?page=1&pageSize=10");
+
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var service = scope.ServiceProvider.GetRequiredService<IJobApplicationService>();
+            await service.AddApplicationsAsync(connId, new List<JobApplication>
+            {
+                new()
+                {
+                    Id = Guid.NewGuid(),
+                    CompanyName = $"{testKey}-InsertedCo",
+                    JobRole = "Dev",
+                    AppliedDate = "20-05-2026",
+                    Status = JobApplicationStatus.Applied,
+                    MessageId = messageId
+                }
+            });
+        }
+
+        using (var db = _factory.CreateDbContext())
+        {
+            var inserted = db.JobApplications.Single(ja => ja.MessageId == messageId);
+            inserted.CreatedAt = new DateTime(2035, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+            await db.SaveChangesAsync();
+        }
+
+        var response = await _client.GetAsync("/api/v1/applications?page=1&pageSize=10");
+        var items = await ReadItemsAsync(response);
+        var companies = Enumerable.Range(0, items.GetArrayLength())
+            .Select(i => items[i].GetProperty("companyName").GetString())
+            .ToList();
+
+        Assert.Contains($"{testKey}-InsertedCo", companies);
+    }
+
+    private static async Task<JsonElement> ReadItemsAsync(HttpResponseMessage response)
+    {
+        var content = await response.Content.ReadFromJsonAsync<JsonElement>();
+        return content.GetProperty("items");
+    }
+
+    private async Task SeedApplicationsAsync(Guid connId, string testKey, int count, DateTime newestCreatedAt)
+    {
+        var ids = new List<Guid>();
+        using (var db = _factory.CreateDbContext())
+        {
+            for (var i = 0; i < count; i++)
+            {
+                var id = Guid.NewGuid();
+                ids.Add(id);
+                db.JobApplications.Add(new JobApplication
+                {
+                    Id = id,
+                    CompanyName = $"{testKey}-Company-{i:00}",
+                    JobRole = "Dev",
+                    AppliedDate = "20-05-2026",
+                    Status = JobApplicationStatus.Applied,
+                    MessageId = $"msg-{testKey}-{i:00}",
+                    EmailConnectionId = connId
+                });
+            }
+
+            await db.SaveChangesAsync();
+        }
+
+        using (var db = _factory.CreateDbContext())
+        {
+            for (var i = 0; i < ids.Count; i++)
+            {
+                var application = await db.JobApplications.FindAsync(ids[i]);
+                application!.CreatedAt = newestCreatedAt.AddMinutes(-i);
+            }
+
+            await db.SaveChangesAsync();
+        }
     }
 
     private async Task<Guid> SeedConnectionAsync(string email = "test@gmail.com")

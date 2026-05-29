@@ -21,7 +21,7 @@
     </div>
     <div class="toolbar-meta">
       <span>{{ resultCountText() }}</span>
-      <span>10 per page</span>
+      <span>{{ service.pageSize() }} per page</span>
     </div>
   </div>
 
@@ -68,7 +68,7 @@
             </tr>
           </thead>
           <tbody>
-            @for (app of service.pageItems(); track app.companyName + app.appliedDate) {
+            @for (app of service.pageItems(); track app.id) {
               <tr>
                 <td class="company">{{ app.companyName }}</td>
                 <td class="role">{{ app.jobRole }}</td>
@@ -85,13 +85,13 @@
       <div class="pagination">
         <div class="pagination-summary">
           Showing {{ service.paginationStart() }}–{{ service.paginationEnd() }} of
-          {{ service.filteredApplications().length }}
+          {{ service.totalCount() }}
         </div>
         <div class="pagination-actions">
           <button
             class="button"
             type="button"
-            [disabled]="service.safePage() === 1"
+            [disabled]="!service.hasPrevious()"
             (click)="onPrevious()"
           >
             Previous
@@ -102,7 +102,7 @@
           <button
             class="button"
             type="button"
-            [disabled]="service.safePage() === service.totalPages()"
+            [disabled]="!service.hasNext()"
             (click)="onNext()"
           >
             Next

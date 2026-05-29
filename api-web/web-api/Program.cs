@@ -12,6 +12,7 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddSignalR();
+builder.Services.AddMemoryCache();
 
 builder.Services.AddDistributedMemoryCache();
 builder.Services.AddSession(options =>
@@ -29,6 +30,7 @@ builder.Services.AddScoped<IEmailService, GmailService>();
 builder.Services.AddScoped<IAIService, OpenAIService>();
 builder.Services.AddScoped<ISyncOrchestrator, SyncOrchestrator>();
 builder.Services.AddScoped<IJobApplicationService, JobApplicationService>();
+builder.Services.AddSingleton<IApplicationListCacheState, ApplicationListCacheState>();
 builder.Services.AddScoped<ISyncProgressReporter, SyncProgressReporter>();
 builder.Services.AddScoped<ISyncHubNotifier, SyncHubNotifier>();
 builder.Services.AddScoped<IGoogleTokenExchanger, GoogleTokenExchanger>();
