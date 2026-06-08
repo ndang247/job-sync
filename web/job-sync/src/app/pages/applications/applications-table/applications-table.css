@@ -146,35 +146,56 @@
   overflow-x: auto;
 }
 
-.applications-table {
-  width: 100%;
-  border-collapse: collapse;
-  min-width: 720px;
+.rows-shell {
+  display: grid;
+  min-width: 1120px;
 }
 
-.applications-table thead th {
-  padding: 16px 22px;
+.rows-head,
+.application-row {
+  display: grid;
+  grid-template-columns:
+    minmax(160px, 1.1fr)
+    minmax(260px, 2.2fr)
+    minmax(220px, 1.3fr)
+    minmax(120px, 0.85fr)
+    minmax(120px, 0.8fr)
+    minmax(110px, 0.7fr);
+  gap: 18px;
+  align-items: start;
+  padding: 18px 22px;
+}
+
+.rows-head {
   border-bottom: 1px solid var(--border);
   color: var(--muted);
   font: 600 0.6875rem/1.2 var(--font-mono);
   letter-spacing: 0.18em;
   text-transform: uppercase;
-  text-align: left;
   background: color-mix(in oklab, var(--bg) 38%, var(--surface));
 }
 
-.applications-table tbody td {
-  padding: 18px 22px;
-  border-bottom: 1px solid var(--border);
-  vertical-align: top;
+.application-list {
+  display: grid;
 }
 
-.applications-table tbody tr:last-child td {
+.application-row {
+  border-bottom: 1px solid var(--border);
+  transition: background-color 180ms ease;
+}
+
+.application-row:last-child {
   border-bottom: 0;
 }
 
-.applications-table tbody tr:hover {
+.application-row:hover {
   background: color-mix(in oklab, var(--accent) 3%, var(--surface));
+}
+
+.row-cell {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
 }
 
 .company {
@@ -189,9 +210,43 @@
   text-wrap: pretty;
 }
 
+.email {
+  color: var(--muted);
+  font-size: 0.95rem;
+  white-space: nowrap;
+}
+
+.action-cell {
+  align-items: start;
+  justify-items: start;
+  white-space: nowrap;
+}
+
+.table-action {
+  min-height: 36px;
+  padding: 0 14px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--fg);
+}
+
+.table-action:hover,
+.table-action:focus-visible {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.table-action:focus-visible {
+  outline: 2px solid color-mix(in oklab, var(--accent) 55%, white);
+  outline-offset: 3px;
+}
+
 .status-pill {
   display: inline-flex;
   align-items: center;
+  justify-self: start;
+  width: fit-content;
+  max-width: max-content;
   min-height: 30px;
   padding: 0 11px;
   border: 1px solid color-mix(in oklab, var(--accent) 25%, var(--border));
@@ -205,19 +260,15 @@
   background: color-mix(in oklab, var(--accent) 12%, var(--surface));
 }
 
-.status-pill[data-status="offer"] {
+.status-pill[data-status="offered"] {
   border-color: color-mix(in oklab, var(--success) 28%, var(--border));
   background: color-mix(in oklab, var(--success) 11%, var(--surface));
 }
 
-.status-pill[data-status="rejected"] {
+.status-pill[data-status="company-rejected"],
+.status-pill[data-status="candidate-rejected"] {
   border-color: color-mix(in oklab, oklch(54% 0.18 25) 24%, var(--border));
   background: color-mix(in oklab, oklch(54% 0.18 25) 9%, var(--surface));
-}
-
-.status-pill[data-status="reviewing"] {
-  border-color: color-mix(in oklab, oklch(58% 0.09 85) 28%, var(--border));
-  background: color-mix(in oklab, oklch(58% 0.09 85) 10%, var(--surface));
 }
 
 .date {
@@ -288,6 +339,32 @@
 }
 
 @container applications (max-width: 740px) {
+  .rows-shell {
+    min-width: 0;
+  }
+
+  .rows-head {
+    display: none;
+  }
+
+  .application-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+    padding: 18px;
+  }
+
+  .row-cell::before {
+    content: attr(data-label);
+    color: var(--muted);
+    font: 600 0.625rem/1.2 var(--font-mono);
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+  }
+
+  .action-cell {
+    justify-items: start;
+  }
+
   .toolbar {
     align-items: stretch;
   }
@@ -309,6 +386,12 @@
   .page-indicator,
   .pagination-actions .button {
     width: 100%;
+  }
+}
+
+@container applications (max-width: 520px) {
+  .application-row {
+    grid-template-columns: 1fr;
   }
 }
 

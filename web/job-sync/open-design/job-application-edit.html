@@ -419,7 +419,7 @@
         <div class="panel-header">
           <p class="eyebrow">Application details</p>
           <h2>Update the saved record.</h2>
-          <p>The form is prefilled from the selected job application. Email uses the connected account list, with an “Other” option when the original thread came from a different inbox.</p>
+          <p>The form is prefilled from the selected job application. You can update the company, role, status, and applied date before confirming the changes.</p>
         </div>
 
         <form id="editForm" novalidate>
@@ -451,14 +451,9 @@
             </div>
 
             <div class="field-group">
-              <label class="field-label" for="emailSelect">Email</label>
-              <select class="select-input" id="emailSelect" name="emailSelect" required></select>
-              <span class="help-text">Connected accounts appear first. Pick “Other” to enter a custom email.</span>
-            </div>
-
-            <div class="field-group" id="otherEmailGroup">
-              <label class="field-label" for="otherEmail">Other email</label>
-              <input class="text-input" id="otherEmail" name="otherEmail" type="email" placeholder="candidate+other@gmail.com">
+              <label class="field-label" for="email">Email</label>
+              <input class="text-input" id="email" name="email" type="email" readonly>
+              <span class="help-text">Email is fixed to the application record and cannot be edited here.</span>
             </div>
           </div>
 
@@ -567,9 +562,7 @@
     const jobRole = document.getElementById("jobRole");
     const statusField = document.getElementById("status");
     const appliedDate = document.getElementById("appliedDate");
-    const emailSelect = document.getElementById("emailSelect");
-    const otherEmailGroup = document.getElementById("otherEmailGroup");
-    const otherEmail = document.getElementById("otherEmail");
+    const emailField = document.getElementById("email");
     const cancelButton = document.getElementById("cancelButton");
     const confirmModal = document.getElementById("confirmModal");
     const confirmList = document.getElementById("confirmList");
@@ -694,47 +687,6 @@
       return new URLSearchParams(window.location.search).get("id");
     }
 
-    function getEmailOptions(emailValue) {
-      const connectedEmails = state.accounts.map((account) => account.label);
-      const hasConnectedMatch = connectedEmails.includes(emailValue);
-      return {
-        connectedEmails,
-        selectedValue: hasConnectedMatch ? emailValue : "other",
-        otherValue: hasConnectedMatch ? "" : emailValue
-      };
-    }
-
-    function renderEmailSelect(emailValue) {
-      const { connectedEmails, selectedValue, otherValue } = getEmailOptions(emailValue);
-      emailSelect.innerHTML = "";
-
-      connectedEmails.forEach((email) => {
-        const option = document.createElement("option");
-        option.value = email;
-        option.textContent = email;
-        option.selected = email === selectedValue;
-        emailSelect.appendChild(option);
-      });
-
-      const otherOption = document.createElement("option");
-      otherOption.value = "other";
-      otherOption.textContent = "Other";
-      otherOption.selected = selectedValue === "other";
-      emailSelect.appendChild(otherOption);
-
-      otherEmail.value = otherValue;
-      syncOtherEmailVisibility();
-    }
-
-    function syncOtherEmailVisibility() {
-      const showOther = emailSelect.value === "other";
-      otherEmailGroup.classList.toggle("visually-hidden", !showOther);
-      otherEmail.required = showOther;
-      if (!showOther) {
-        otherEmail.value = "";
-      }
-    }
-
     function renderPage() {
       const hasApplication = Boolean(state.application);
       editPanel.classList.toggle("visually-hidden", !hasApplication);
@@ -771,35 +723,23 @@
       jobRole.value = state.application.JobRole;
       statusField.value = state.application.Status;
       appliedDate.value = displayDateToInput(state.application.AppliedDate);
-      renderEmailSelect(state.application.Email);
+      emailField.value = state.application.Email;
       renderPage();
     }
 
     function collectDraft() {
-      const selectedEmail = emailSelect.value === "other" ? otherEmail.value.trim() : emailSelect.value;
       return {
         ...state.application,
         CompanyName: companyName.value.trim(),
         JobRole: jobRole.value.trim(),
         Status: statusField.value,
         AppliedDate: inputDateToDisplay(appliedDate.value),
-        Email: selectedEmail
+        Email: state.application.Email
       };
     }
 
     function validateForm() {
-      if (!editForm.reportValidity()) {
-        return false;
-      }
-
-      if (emailSelect.value === "other" && !otherEmail.value.trim()) {
-        otherEmail.setCustomValidity("Enter an email address.");
-        otherEmail.reportValidity();
-        return false;
-      }
-
-      otherEmail.setCustomValidity("");
-      return true;
+      return editForm.reportValidity();
     }
 
     function openConfirmModal() {
@@ -863,14 +803,6 @@
 
       seedForm();
     }
-
-    emailSelect.addEventListener("change", () => {
-      otherEmail.setCustomValidity("");
-      syncOtherEmailVisibility();
-    });
-    otherEmail.addEventListener("input", () => {
-      otherEmail.setCustomValidity("");
-    });
 
     cancelButton.addEventListener("click", () => {
       window.location.href = "job-applications-tracker.html";

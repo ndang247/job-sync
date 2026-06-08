@@ -1,0 +1,163 @@
+<main class="app-shell">
+  <section class="page-head">
+    <a class="quiet-link" href="/" (click)="onCancel($event)">
+      <span aria-hidden="true">&lt;</span>
+      <span>Back to applications</span>
+    </a>
+    <div class="head-grid">
+      <div>
+        <h1 id="pageTitle">
+          @if (application()) {
+            Edit {{ application()?.companyName }}.
+          } @else {
+            Review and update the selected application.
+          }
+        </h1>
+        <p>
+          Make changes to the company, role, status, and applied date, then confirm before saving
+          it back to the tracker.
+        </p>
+      </div>
+      <aside class="summary-card" aria-live="polite">
+        <span class="summary-label">Selected record</span>
+        <strong>{{ application()?.companyName ?? '—' }}</strong>
+        <span>{{ application()?.jobRole ?? 'Waiting for the application details.' }}</span>
+        <span>
+          @if (application()) {
+            {{ application()?.status }} · {{ application()?.appliedDate }} · {{ application()?.email }}
+          } @else {
+            Choose a record from the tracker to edit.
+          }
+        </span>
+      </aside>
+    </div>
+  </section>
+
+  <section class="content">
+    <div class="status-note" aria-live="polite">{{ errorMessage() }}</div>
+
+    @if (loading()) {
+      <section class="not-found" aria-live="polite">
+        <p class="eyebrow">Loading application</p>
+        <h2>Preparing the edit form.</h2>
+        <p>The selected application is being loaded from the server.</p>
+      </section>
+    } @else if (notFound()) {
+      <section class="not-found" id="notFoundState">
+        <p class="eyebrow">Application missing</p>
+        <h2>That application could not be found.</h2>
+        <p>
+          The selected record no longer exists. Go back to the tracker and choose another
+          application from the list.
+        </p>
+        <a class="quiet-link" href="/" (click)="onCancel($event)">Return to tracker</a>
+      </section>
+    } @else {
+      <section class="panel" id="editPanel">
+        <div class="panel-header">
+          <p class="eyebrow">Application details</p>
+          <h2>Update the saved record.</h2>
+          <p>
+            The form is prefilled from the selected job application. You can update the company,
+            role, status, and applied date before confirming the changes.
+          </p>
+        </div>
+
+        <form [formGroup]="form" (ngSubmit)="onSubmit()" novalidate>
+          <div class="form-grid">
+            <div class="field-group">
+              <label class="field-label" for="companyName">Company name</label>
+              <input
+                class="text-input"
+                id="companyName"
+                type="text"
+                formControlName="companyName"
+                required
+              />
+            </div>
+
+            <div class="field-group">
+              <label class="field-label" for="jobRole">Role</label>
+              <input class="text-input" id="jobRole" type="text" formControlName="jobRole" required />
+            </div>
+
+            <div class="field-group">
+              <label class="field-label" for="status">Status</label>
+              <select class="select-input" id="status" formControlName="status" required>
+                @for (status of statusOptions; track status) {
+                  <option [value]="status">{{ status }}</option>
+                }
+              </select>
+            </div>
+
+            <div class="field-group">
+              <label class="field-label" for="appliedDate">Applied date</label>
+              <input
+                class="text-input"
+                id="appliedDate"
+                type="date"
+                formControlName="appliedDate"
+                required
+              />
+            </div>
+
+            <div class="field-group">
+              <label class="field-label" for="email">Email</label>
+              <input
+                class="text-input"
+                id="email"
+                name="email"
+                type="email"
+                [value]="application()?.email ?? ''"
+                readonly
+              />
+              <span class="help-text">Email is fixed to the application record and cannot be edited here.</span>
+            </div>
+          </div>
+
+          <div class="button-row">
+            <button class="button" type="button" (click)="onCancel()">Cancel</button>
+            <button class="button button-primary" id="submitButton" type="submit">Submit</button>
+          </div>
+        </form>
+      </section>
+    }
+  </section>
+</main>
+
+@if (confirmOpen()) {
+  <div class="modal-overlay" id="confirmModal" (click)="closeConfirm()">
+    <div
+      class="modal-card"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="confirmTitle"
+      aria-describedby="confirmDescription"
+      (click)="$event.stopPropagation()"
+    >
+      <div class="field-group">
+        <h3 id="confirmTitle">Confirm these changes.</h3>
+        <p id="confirmDescription">Review the updated values before saving them back to the applications list.</p>
+      </div>
+      <ul>
+        <li><strong>Company: </strong>{{ draft()?.companyName }}</li>
+        <li><strong>Role: </strong>{{ draft()?.jobRole }}</li>
+        <li><strong>Status: </strong>{{ draft()?.status }}</li>
+        <li><strong>Applied date: </strong>{{ displayDate() }}</li>
+        <li><strong>Email: </strong>{{ application()?.email }}</li>
+      </ul>
+      <div class="button-row">
+        <button class="button" type="button" (click)="closeConfirm()">Cancel</button>
+        <button
+          class="button button-primary"
+          id="confirmSubmitButton"
+          type="button"
+          [disabled]="saving()"
+          (click)="confirmChanges()"
+        >
+          Confirm changes
+        </button>
+      </div>
+    </div>
+  </div>
+}

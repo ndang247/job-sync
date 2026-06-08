@@ -57,30 +57,43 @@
       </div>
     } @else if (showTable()) {
       <div class="table-wrap">
-        <table class="applications-table">
-          <thead>
-            <tr>
-              <th scope="col">Company name</th>
-              <th scope="col">Role</th>
-              <th scope="col">Email</th>
-              <th scope="col">Status</th>
-              <th scope="col">Applied date</th>
-            </tr>
-          </thead>
-          <tbody>
+        <div class="rows-shell" role="table" aria-label="Job applications">
+          <div class="rows-head" role="row">
+            <div role="columnheader">Company name</div>
+            <div role="columnheader">Role</div>
+            <div role="columnheader">Email</div>
+            <div role="columnheader">Status</div>
+            <div role="columnheader">Applied date</div>
+            <div role="columnheader">Action</div>
+          </div>
+          <div class="application-list" role="rowgroup">
             @for (app of service.pageItems(); track app.id) {
-              <tr>
-                <td class="company">{{ app.companyName }}</td>
-                <td class="role">{{ app.jobRole }}</td>
-                <td class="email">{{ app.email }}</td>
-                <td>
-                  <span class="status-pill" [attr.data-status]="app.status">{{ app.status }}</span>
-                </td>
-                <td class="date">{{ app.appliedDate }}</td>
-              </tr>
+              <div class="application-row" role="row">
+                <div class="row-cell company" data-label="Company name" role="cell">
+                  {{ app.companyName }}
+                </div>
+                <div class="row-cell role" data-label="Role" role="cell">{{ app.jobRole }}</div>
+                <div class="row-cell email" data-label="Email" role="cell">{{ app.email }}</div>
+                <div class="row-cell" data-label="Status" role="cell">
+                  <span class="status-pill" [attr.data-status]="app.statusKey">{{ app.status }}</span>
+                </div>
+                <div class="row-cell date" data-label="Applied date" role="cell">
+                  {{ app.appliedDate }}
+                </div>
+                <div class="row-cell action-cell" data-label="Action" role="cell">
+                  <button
+                    class="table-action"
+                    type="button"
+                    data-testid="edit-application"
+                    (click)="onEdit(app.id)"
+                  >
+                    Edit
+                  </button>
+                </div>
+              </div>
             }
-          </tbody>
-        </table>
+          </div>
+        </div>
       </div>
       <div class="pagination">
         <div class="pagination-summary">

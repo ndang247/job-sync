@@ -1,4 +1,5 @@
 import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/core';
+import { Router } from '@angular/router';
 import { ApplicationsService } from '../../../services/applications';
 
 @Component({
@@ -10,6 +11,7 @@ import { ApplicationsService } from '../../../services/applications';
 })
 export class ApplicationsTable {
   protected readonly service = inject(ApplicationsService);
+  private readonly router = inject(Router);
 
   protected readonly summary = computed(() => {
     if (this.service.loading()) return 'Loading the latest applications from your server…';
@@ -59,5 +61,9 @@ export class ApplicationsTable {
 
   onSyncAgain(): void {
     this.service.openSyncModal();
+  }
+
+  onEdit(id: string): void {
+    void this.router.navigate(['/applications', id, 'edit']);
   }
 }

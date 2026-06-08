@@ -17,7 +17,10 @@ public sealed class JobApplication
         CompanyName = CompanyName,
         JobRole = JobRole,
         AppliedDate = AppliedDate,
-        Status = Enum.TryParse<JobApplicationStatus>(Status, ignoreCase: true, out var parsed)
+        Status = Enum.TryParse<JobApplicationStatus>(
+                Status.Replace(" ", string.Empty),
+                ignoreCase: true,
+                out var parsed)
             ? parsed
             : JobApplicationStatus.Applied
     };

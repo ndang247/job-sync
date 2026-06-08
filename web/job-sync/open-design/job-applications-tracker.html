@@ -290,6 +290,11 @@
       text-wrap: pretty;
     }
 
+    .modal-summary {
+      color: var(--fg) !important;
+      font-weight: 600;
+    }
+
     .field-group {
       display: grid;
       gap: 10px;
@@ -469,8 +474,11 @@
     }
 
     .action-cell {
+      display: flex;
+      flex-wrap: wrap;
       align-items: start;
-      justify-items: start;
+      justify-content: flex-start;
+      gap: 10px;
       white-space: nowrap;
     }
 
@@ -482,10 +490,23 @@
       color: var(--fg);
     }
 
+    .table-action-danger {
+      border-color: color-mix(in oklab, var(--accent) 52%, oklch(45% 0.17 28));
+      background: color-mix(in oklab, var(--accent) 14%, var(--surface));
+      color: oklch(43% 0.17 28);
+    }
+
     .table-action:hover,
     .table-action:focus-visible {
       border-color: var(--accent);
       color: var(--accent);
+    }
+
+    .table-action-danger:hover,
+    .table-action-danger:focus-visible {
+      border-color: oklch(43% 0.17 28);
+      background: color-mix(in oklab, var(--accent) 22%, var(--surface));
+      color: oklch(43% 0.17 28);
     }
 
     .status-pill {
@@ -874,6 +895,28 @@
     </div>
   </div>
 
+  <div class="modal-overlay" id="deleteModal" hidden>
+    <div
+      class="modal-card"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="deleteModalTitle"
+      aria-describedby="deleteModalDescription"
+    >
+      <div class="field-group">
+        <h3 id="deleteModalTitle">Delete this application?</h3>
+        <p id="deleteModalDescription">This action removes the selected job application from the tracker list.</p>
+      </div>
+      <div class="field-group">
+        <p class="modal-summary" id="deleteModalSummary"></p>
+      </div>
+      <div class="modal-actions">
+        <button class="button" id="cancelDeleteModal" type="button">Cancel</button>
+        <button class="button table-action-danger" id="confirmDeleteModal" type="button">Delete</button>
+      </div>
+    </div>
+  </div>
+
   <script>
     const PAGE_SIZE = 10;
     const STORAGE_KEYS = {
@@ -1071,7 +1114,9 @@
       lastSyncLabel: "Last sync —",
       statusNote: "",
       syncTimer: null,
-      syncAccountLabel: persistedAccounts[0]?.label ?? ""
+      syncAccountLabel: persistedAccounts[0]?.label ?? "",
+      deleteModalOpen: false,
+      pendingDeleteId: ""
     };
 
     const loadingState = document.getElementById("loadingState");
@@ -1103,6 +1148,10 @@
     const syncAccountSelect = document.getElementById("syncAccountSelect");
     const cancelSyncModal = document.getElementById("cancelSyncModal");
     const confirmSyncModal = document.getElementById("confirmSyncModal");
+    const deleteModal = document.getElementById("deleteModal");
+    const deleteModalSummary = document.getElementById("deleteModalSummary");
+    const cancelDeleteModal = document.getElementById("cancelDeleteModal");
+    const confirmDeleteModal = document.getElementById("confirmDeleteModal");
 
     let modalTrigger = null;
 
@@ -1209,7 +1258,14 @@
         editButton.type = "button";
         editButton.dataset.editId = application.Id;
         editButton.textContent = "Edit";
-        actionCell.appendChild(editButton);
+
+        const deleteButton = document.createElement("button");
+        deleteButton.className = "table-action table-action-danger";
+        deleteButton.type = "button";
+        deleteButton.dataset.deleteId = application.Id;
+        deleteButton.textContent = "Delete";
+
+        actionCell.append(editButton, deleteButton);
 
         row.append(companyCell, roleCell, emailCell, statusCell, dateCell, actionCell);
         tableBody.appendChild(row);
@@ -1282,6 +1338,19 @@
       });
     }
 
+    function getPendingDeleteApplication() {
+      return state.applications.find((application) => application.Id === state.pendingDeleteId) ?? null;
+    }
+
+    function renderDeleteModal() {
+      deleteModal.hidden = !state.deleteModalOpen;
+      const application = getPendingDeleteApplication();
+      confirmDeleteModal.disabled = !application;
+      deleteModalSummary.textContent = application
+        ? `${application.CompanyName} — ${application.JobRole} · ${application.AppliedDate}`
+        : "";
+    }
+
     function renderStates() {
       const filteredApplications = getFilteredApplications();
       const pagination = getPagination(filteredApplications);
@@ -1302,6 +1371,7 @@
       renderSyncPanel();
       renderMeta();
       renderSyncModal();
+      renderDeleteModal();
       updateSummary();
       previousPageButton.disabled = pagination.currentPage === 1;
       nextPageButton.disabled = pagination.currentPage === pagination.totalPages;
@@ -1369,6 +1439,50 @@
       }
     }
 
+    function openDeleteModal(applicationId, trigger) {
+      if (state.loading || state.syncing) {
+        return;
+      }
+
+      state.pendingDeleteId = applicationId;
+      state.deleteModalOpen = true;
+      modalTrigger = trigger ?? document.activeElement;
+      renderStates();
+      window.requestAnimationFrame(() => confirmDeleteModal.focus());
+    }
+
+    function closeDeleteModal() {
+      state.deleteModalOpen = false;
+      state.pendingDeleteId = "";
+      renderStates();
+
+      if (modalTrigger instanceof HTMLElement) {
+        modalTrigger.focus();
+      }
+    }
+
+    function deleteApplication(applicationId) {
+      const application = state.applications.find((item) => item.Id === applicationId);
+      if (!application) {
+        closeDeleteModal();
+        return;
+      }
+
+      state.applications = state.applications.filter((item) => item.Id !== applicationId);
+      persistApplications(state.applications);
+      state.deleteModalOpen = false;
+      state.pendingDeleteId = "";
+      const filteredCount = getFilteredApplications().length;
+      const totalPages = Math.max(1, Math.ceil(filteredCount / PAGE_SIZE));
+      state.currentPage = Math.min(state.currentPage, totalPages);
+      state.statusNote = `${application.CompanyName} was removed from the tracker.`;
+      renderStates();
+
+      if (modalTrigger instanceof HTMLElement && document.body.contains(modalTrigger)) {
+        modalTrigger.focus();
+      }
+    }
+
     async function runSync(accountId) {
       if (state.syncing) {
         return;
@@ -1430,16 +1544,27 @@
 
     tableBody.addEventListener("click", (event) => {
       const editButton = event.target.closest("[data-edit-id]");
-      if (!(editButton instanceof HTMLElement)) {
+      if (editButton instanceof HTMLElement) {
+        const { editId } = editButton.dataset;
+        if (!editId) {
+          return;
+        }
+
+        window.location.href = `job-application-edit.html?id=${encodeURIComponent(editId)}`;
         return;
       }
 
-      const { editId } = editButton.dataset;
-      if (!editId) {
+      const deleteButton = event.target.closest("[data-delete-id]");
+      if (!(deleteButton instanceof HTMLElement)) {
         return;
       }
 
-      window.location.href = `job-application-edit.html?id=${encodeURIComponent(editId)}`;
+      const { deleteId } = deleteButton.dataset;
+      if (!deleteId) {
+        return;
+      }
+
+      openDeleteModal(deleteId, deleteButton);
     });
 
     syncButton.addEventListener("click", () => openSyncModal(syncButton));
@@ -1449,12 +1574,23 @@
       state.selectedAccountId = syncAccountSelect.value;
       runSync(syncAccountSelect.value);
     });
+    cancelDeleteModal.addEventListener("click", closeDeleteModal);
+    confirmDeleteModal.addEventListener("click", () => {
+      if (state.pendingDeleteId) {
+        deleteApplication(state.pendingDeleteId);
+      }
+    });
     syncAccountSelect.addEventListener("change", (event) => {
       state.selectedAccountId = event.target.value;
     });
     syncModal.addEventListener("click", (event) => {
       if (event.target === syncModal) {
         closeSyncModal();
+      }
+    });
+    deleteModal.addEventListener("click", (event) => {
+      if (event.target === deleteModal) {
+        closeDeleteModal();
       }
     });
     searchInput.addEventListener("input", (event) => {
@@ -1476,7 +1612,9 @@
       }
     });
     window.addEventListener("keydown", (event) => {
-      if (event.key === "Escape" && state.syncModalOpen) {
+      if (event.key === "Escape" && state.deleteModalOpen) {
+        closeDeleteModal();
+      } else if (event.key === "Escape" && state.syncModalOpen) {
         closeSyncModal();
       }
     });

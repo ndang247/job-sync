@@ -2,14 +2,30 @@ import { computed, inject, Injectable, signal } from '@angular/core';
 import { DOCUMENT } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
 import * as signalR from '@microsoft/signalr';
+import { map, Observable, tap } from 'rxjs';
 import { StorageService } from './storage/storage';
+
+export type JobApplicationStatus =
+  | 'Applied'
+  | 'Interviewing'
+  | 'Offered'
+  | 'Company Rejected'
+  | 'Candidate Rejected';
+
+export type JobApplicationStatusKey =
+  | 'applied'
+  | 'interviewing'
+  | 'offered'
+  | 'company-rejected'
+  | 'candidate-rejected';
 
 export interface JobApplication {
   id: string;
   companyName: string;
   jobRole: string;
   email: string;
-  status: 'applied';
+  status: JobApplicationStatus;
+  statusKey: JobApplicationStatusKey;
   appliedDate: string;
 }
 
@@ -32,6 +48,13 @@ interface ApplicationsPageResponse {
   hasNext: boolean;
 }
 
+export interface UpdateApplicationRequest {
+  companyName: string;
+  jobRole: string;
+  status: JobApplicationStatus;
+  appliedDate: string;
+}
+
 export interface GoogleAccount {
   id: string;
   label: string;
@@ -48,6 +71,13 @@ const PAGE_SIZE = 10;
 
 const API_BASE_URL = 'http://localhost:5084';
 const LAST_SYNC_KEY = 'lastSyncTimestamp';
+const STATUS_LABELS: Record<JobApplicationStatusKey, JobApplicationStatus> = {
+  applied: 'Applied',
+  interviewing: 'Interviewing',
+  offered: 'Offered',
+  'company-rejected': 'Company Rejected',
+  'candidate-rejected': 'Candidate Rejected',
+};
 
 @Injectable({
   providedIn: 'root',
@@ -124,7 +154,8 @@ export class ApplicationsService {
               jobRole: application.jobRole,
               email: application.email,
               appliedDate: application.appliedDate,
-              status: application.status.toLowerCase() as JobApplication['status'],
+              status: this.toStatusLabel(application.status),
+              statusKey: this.toStatusKey(application.status),
             })),
           );
           this.currentPage.set(response.page);
@@ -139,6 +170,27 @@ export class ApplicationsService {
           this.loading.set(false);
         },
       });
+  }
+
+  getApplication(id: string): Observable<JobApplication> {
+    return this.http
+      .get<JobApplicationResponse>(`${API_BASE_URL}/api/v1/applications/${id}`)
+      .pipe(map((response) => this.mapApplication(response)));
+  }
+
+  updateApplication(id: string, request: UpdateApplicationRequest): Observable<JobApplication> {
+    return this.http
+      .put<JobApplicationResponse>(`${API_BASE_URL}/api/v1/applications/${id}`, request)
+      .pipe(
+        map((response) => this.mapApplication(response)),
+        tap((updated) => {
+          this.applications.update((applications) =>
+            applications.map((application) =>
+              application.id === updated.id ? updated : application,
+            ),
+          );
+        }),
+      );
   }
 
   loadConnections(): void {
@@ -258,6 +310,41 @@ export class ApplicationsService {
   nextPage(): void {
     if (this.hasNext()) {
       this.loadApplications(this.safePage() + 1);
+    }
+  }
+
+  private mapApplication(application: JobApplicationResponse): JobApplication {
+    return {
+      id: application.id,
+      companyName: application.companyName,
+      jobRole: application.jobRole,
+      email: application.email,
+      appliedDate: application.appliedDate,
+      status: this.toStatusLabel(application.status),
+      statusKey: this.toStatusKey(application.status),
+    };
+  }
+
+  private toStatusLabel(status: string): JobApplicationStatus {
+    return STATUS_LABELS[this.toStatusKey(status)];
+  }
+
+  private toStatusKey(status: string): JobApplicationStatusKey {
+    const normalized = status.trim().toLowerCase().replace(/[\s-]+/g, '');
+    switch (normalized) {
+      case 'interviewing':
+        return 'interviewing';
+      case 'offer':
+      case 'offered':
+        return 'offered';
+      case 'rejected':
+      case 'companyrejected':
+        return 'company-rejected';
+      case 'candidaterejected':
+        return 'candidate-rejected';
+      case 'applied':
+      default:
+        return 'applied';
     }
   }
 }

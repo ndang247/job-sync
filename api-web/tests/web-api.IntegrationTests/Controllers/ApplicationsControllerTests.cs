@@ -348,6 +348,221 @@ public class ApplicationsControllerTests : IClassFixture<CustomWebApplicationFac
         Assert.Contains($"{testKey}-InsertedCo", companies);
     }
 
+    [Fact]
+    public async Task GetById_WithApplication_ReturnsSelectedApplication()
+    {
+        var connId = await SeedConnectionAsync("detail@example.com");
+        var appId = Guid.NewGuid();
+
+        using (var db = _factory.CreateDbContext())
+        {
+            db.JobApplications.Add(new JobApplication
+            {
+                Id = appId,
+                CompanyName = "DetailCo",
+                JobRole = "Platform Engineer",
+                AppliedDate = "21-05-2026",
+                Status = JobApplicationStatus.Applied,
+                MessageId = $"msg-{Guid.NewGuid()}",
+                EmailConnectionId = connId
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var response = await _client.GetAsync($"/api/v1/applications/{appId}");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var item = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal(appId, item.GetProperty("id").GetGuid());
+        Assert.Equal("DetailCo", item.GetProperty("companyName").GetString());
+        Assert.Equal("Platform Engineer", item.GetProperty("jobRole").GetString());
+        Assert.Equal("21-05-2026", item.GetProperty("appliedDate").GetString());
+        Assert.Equal("Applied", item.GetProperty("status").GetString());
+        Assert.Equal("detail@example.com", item.GetProperty("email").GetString());
+    }
+
+    [Fact]
+    public async Task GetById_MissingApplication_ReturnsNotFound()
+    {
+        var response = await _client.GetAsync($"/api/v1/applications/{Guid.NewGuid()}");
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task GetById_SoftDeletedApplication_ReturnsNotFound()
+    {
+        var connId = await SeedConnectionAsync();
+        var appId = Guid.NewGuid();
+
+        using (var db = _factory.CreateDbContext())
+        {
+            db.JobApplications.Add(new JobApplication
+            {
+                Id = appId,
+                CompanyName = "DeletedDetailCo",
+                JobRole = "Dev",
+                AppliedDate = "21-05-2026",
+                Status = JobApplicationStatus.Applied,
+                MessageId = $"msg-{Guid.NewGuid()}",
+                EmailConnectionId = connId,
+                DeletedAt = DateTime.UtcNow
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var response = await _client.GetAsync($"/api/v1/applications/{appId}");
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Put_UpdatesEditableFieldsAndKeepsEmailReadOnly()
+    {
+        var connId = await SeedConnectionAsync("readonly@example.com");
+        var appId = Guid.NewGuid();
+
+        using (var db = _factory.CreateDbContext())
+        {
+            db.JobApplications.Add(new JobApplication
+            {
+                Id = appId,
+                CompanyName = "BeforeCo",
+                JobRole = "Before Role",
+                AppliedDate = "20-05-2026",
+                Status = JobApplicationStatus.Applied,
+                MessageId = $"msg-{Guid.NewGuid()}",
+                EmailConnectionId = connId
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var response = await _client.PutAsJsonAsync($"/api/v1/applications/{appId}", new
+        {
+            companyName = "AfterCo",
+            jobRole = "After Role",
+            status = "Interviewing",
+            appliedDate = "22-05-2026"
+        });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var item = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("AfterCo", item.GetProperty("companyName").GetString());
+        Assert.Equal("After Role", item.GetProperty("jobRole").GetString());
+        Assert.Equal("Interviewing", item.GetProperty("status").GetString());
+        Assert.Equal("22-05-2026", item.GetProperty("appliedDate").GetString());
+        Assert.Equal("readonly@example.com", item.GetProperty("email").GetString());
+
+        using var verifyDb = _factory.CreateDbContext();
+        var stored = await verifyDb.JobApplications.SingleAsync(ja => ja.Id == appId);
+        Assert.Equal("AfterCo", stored.CompanyName);
+        Assert.Equal("After Role", stored.JobRole);
+        Assert.Equal("22-05-2026", stored.AppliedDate);
+        Assert.Equal("Interviewing", stored.Status.ToString());
+        Assert.Equal(connId, stored.EmailConnectionId);
+        Assert.NotNull(stored.UpdatedAt);
+    }
+
+    [Fact]
+    public async Task Put_MissingApplication_ReturnsNotFound()
+    {
+        var response = await _client.PutAsJsonAsync($"/api/v1/applications/{Guid.NewGuid()}", new
+        {
+            companyName = "AfterCo",
+            jobRole = "After Role",
+            status = "Applied",
+            appliedDate = "22-05-2026"
+        });
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Theory]
+    [InlineData("", "Engineer", "Applied", "22-05-2026")]
+    [InlineData("Company", "", "Applied", "22-05-2026")]
+    [InlineData("Company", "Engineer", "Unknown", "22-05-2026")]
+    [InlineData("Company", "Engineer", "1", "22-05-2026")]
+    [InlineData("Company", "Engineer", "Applied", "2026-05-22")]
+    public async Task Put_InvalidPayload_ReturnsBadRequest(
+        string companyName,
+        string jobRole,
+        string status,
+        string appliedDate)
+    {
+        var connId = await SeedConnectionAsync();
+        var appId = Guid.NewGuid();
+
+        using (var db = _factory.CreateDbContext())
+        {
+            db.JobApplications.Add(new JobApplication
+            {
+                Id = appId,
+                CompanyName = "BeforeCo",
+                JobRole = "Before Role",
+                AppliedDate = "20-05-2026",
+                Status = JobApplicationStatus.Applied,
+                MessageId = $"msg-{Guid.NewGuid()}",
+                EmailConnectionId = connId
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var response = await _client.PutAsJsonAsync($"/api/v1/applications/{appId}", new
+        {
+            companyName,
+            jobRole,
+            status,
+            appliedDate
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Put_InvalidatesCachedApplicationList()
+    {
+        var connId = await SeedConnectionAsync();
+        var appId = Guid.NewGuid();
+
+        using (var db = _factory.CreateDbContext())
+        {
+            db.JobApplications.Add(new JobApplication
+            {
+                Id = appId,
+                CompanyName = "CachedBeforeCo",
+                JobRole = "Dev",
+                AppliedDate = "20-05-2026",
+                Status = JobApplicationStatus.Applied,
+                MessageId = $"msg-{Guid.NewGuid()}",
+                EmailConnectionId = connId
+            });
+            await db.SaveChangesAsync();
+        }
+
+        await _client.GetAsync("/api/v1/applications?page=1&pageSize=10");
+
+        var update = await _client.PutAsJsonAsync($"/api/v1/applications/{appId}", new
+        {
+            companyName = "CachedAfterCo",
+            jobRole = "Dev",
+            status = "Applied",
+            appliedDate = "20-05-2026"
+        });
+
+        Assert.Equal(HttpStatusCode.OK, update.StatusCode);
+
+        var response = await _client.GetAsync("/api/v1/applications?page=1&pageSize=10");
+        var items = await ReadItemsAsync(response);
+        var companies = Enumerable.Range(0, items.GetArrayLength())
+            .Select(i => items[i].GetProperty("companyName").GetString())
+            .ToList();
+
+        Assert.Contains("CachedAfterCo", companies);
+        Assert.DoesNotContain("CachedBeforeCo", companies);
+    }
+
     private static async Task<JsonElement> ReadItemsAsync(HttpResponseMessage response)
     {
         var content = await response.Content.ReadFromJsonAsync<JsonElement>();
