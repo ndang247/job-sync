@@ -22,15 +22,18 @@ public class ApplicationsController : ControllerBase
     private readonly AppDbContext _dbContext;
     private readonly IMemoryCache _cache;
     private readonly IApplicationListCacheState _applicationListCacheState;
+    private readonly IJobApplicationService _jobApplicationService;
 
     public ApplicationsController(
         AppDbContext dbContext,
         IMemoryCache cache,
-        IApplicationListCacheState applicationListCacheState)
+        IApplicationListCacheState applicationListCacheState,
+        IJobApplicationService jobApplicationService)
     {
         _dbContext = dbContext;
         _cache = cache;
         _applicationListCacheState = applicationListCacheState;
+        _jobApplicationService = jobApplicationService;
     }
 
     [HttpGet]
@@ -133,6 +136,14 @@ public class ApplicationsController : ControllerBase
             application.Status,
             application.EmailConnection.Email,
             application.CreatedAt)));
+    }
+
+    [HttpDelete("{id:guid}")]
+    public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken = default)
+    {
+        var deleted = await _jobApplicationService.DeleteApplicationAsync(id, cancellationToken);
+
+        return deleted ? NoContent() : NotFound();
     }
 
     private static bool TryValidateUpdate(

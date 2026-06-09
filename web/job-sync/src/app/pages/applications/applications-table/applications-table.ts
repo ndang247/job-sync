@@ -66,4 +66,8 @@ export class ApplicationsTable {
   onEdit(id: string): void {
     void this.router.navigate(['/applications', id, 'edit']);
   }
+
+  onDelete(id: string, event: Event): void {
+    this.service.openDeleteModal(id, event.currentTarget as HTMLElement);
+  }
 }

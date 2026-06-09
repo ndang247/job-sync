@@ -563,6 +563,119 @@ public class ApplicationsControllerTests : IClassFixture<CustomWebApplicationFac
         Assert.DoesNotContain("CachedBeforeCo", companies);
     }
 
+    [Fact]
+    public async Task Delete_WithApplication_ReturnsNoContentAndSoftDeletes()
+    {
+        var connId = await SeedConnectionAsync();
+        var appId = Guid.NewGuid();
+
+        using (var db = _factory.CreateDbContext())
+        {
+            db.JobApplications.Add(new JobApplication
+            {
+                Id = appId,
+                CompanyName = "DeleteCo",
+                JobRole = "Dev",
+                AppliedDate = "20-05-2026",
+                Status = JobApplicationStatus.Applied,
+                MessageId = $"msg-{Guid.NewGuid()}",
+                EmailConnectionId = connId
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var delete = await _client.DeleteAsync($"/api/v1/applications/{appId}");
+
+        Assert.Equal(HttpStatusCode.NoContent, delete.StatusCode);
+
+        using (var verifyDb = _factory.CreateDbContext())
+        {
+            var stored = await verifyDb.JobApplications
+                .IgnoreQueryFilters()
+                .SingleAsync(ja => ja.Id == appId);
+            Assert.NotNull(stored.DeletedAt);
+        }
+
+        var response = await _client.GetAsync("/api/v1/applications");
+        var items = await ReadItemsAsync(response);
+        var companies = Enumerable.Range(0, items.GetArrayLength())
+            .Select(i => items[i].GetProperty("companyName").GetString())
+            .ToList();
+
+        Assert.DoesNotContain("DeleteCo", companies);
+    }
+
+    [Fact]
+    public async Task Delete_MissingApplication_ReturnsNotFound()
+    {
+        var response = await _client.DeleteAsync($"/api/v1/applications/{Guid.NewGuid()}");
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Delete_SoftDeletedApplication_ReturnsNotFound()
+    {
+        var connId = await SeedConnectionAsync();
+        var appId = Guid.NewGuid();
+
+        using (var db = _factory.CreateDbContext())
+        {
+            db.JobApplications.Add(new JobApplication
+            {
+                Id = appId,
+                CompanyName = "AlreadyDeletedCo",
+                JobRole = "Dev",
+                AppliedDate = "20-05-2026",
+                Status = JobApplicationStatus.Applied,
+                MessageId = $"msg-{Guid.NewGuid()}",
+                EmailConnectionId = connId,
+                DeletedAt = DateTime.UtcNow
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var response = await _client.DeleteAsync($"/api/v1/applications/{appId}");
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Delete_InvalidatesCachedApplicationList()
+    {
+        var connId = await SeedConnectionAsync();
+        var appId = Guid.NewGuid();
+
+        using (var db = _factory.CreateDbContext())
+        {
+            db.JobApplications.Add(new JobApplication
+            {
+                Id = appId,
+                CompanyName = "CachedDeleteCo",
+                JobRole = "Dev",
+                AppliedDate = "20-05-2026",
+                Status = JobApplicationStatus.Applied,
+                MessageId = $"msg-{Guid.NewGuid()}",
+                EmailConnectionId = connId
+            });
+            await db.SaveChangesAsync();
+        }
+
+        await _client.GetAsync("/api/v1/applications?page=1&pageSize=10");
+
+        var delete = await _client.DeleteAsync($"/api/v1/applications/{appId}");
+
+        Assert.Equal(HttpStatusCode.NoContent, delete.StatusCode);
+
+        var response = await _client.GetAsync("/api/v1/applications?page=1&pageSize=10");
+        var items = await ReadItemsAsync(response);
+        var companies = Enumerable.Range(0, items.GetArrayLength())
+            .Select(i => items[i].GetProperty("companyName").GetString())
+            .ToList();
+
+        Assert.DoesNotContain("CachedDeleteCo", companies);
+    }
+
     private static async Task<JsonElement> ReadItemsAsync(HttpResponseMessage response)
     {
         var content = await response.Content.ReadFromJsonAsync<JsonElement>();

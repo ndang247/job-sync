@@ -5,4 +5,5 @@ namespace core.Interfaces;
 public interface IJobApplicationService
 {
     Task AddApplicationsAsync(Guid emailConnectionId, List<JobApplication> applications, CancellationToken cancellationToken = default);
+    Task<bool> DeleteApplicationAsync(Guid id, CancellationToken cancellationToken = default);
 }

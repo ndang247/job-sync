@@ -4,10 +4,11 @@ import { Hero } from './hero/hero';
 import { SyncPanel } from './sync-panel/sync-panel';
 import { ApplicationsTable } from './applications-table/applications-table';
 import { SyncModal } from './sync-modal/sync-modal';
+import { DeleteModal } from './delete-modal/delete-modal';
 
 @Component({
   selector: 'app-applications',
-  imports: [Hero, SyncPanel, ApplicationsTable, SyncModal],
+  imports: [Hero, SyncPanel, ApplicationsTable, SyncModal, DeleteModal],
   templateUrl: './applications.html',
   styleUrl: './applications.css',
   changeDetection: ChangeDetectionStrategy.OnPush,

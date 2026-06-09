@@ -50,4 +50,20 @@ public class JobApplicationService : IJobApplicationService
         await _dbContext.SaveChangesAsync(cancellationToken);
         _applicationListCacheState.Invalidate();
     }
+
+    public async Task<bool> DeleteApplicationAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        var application = await _dbContext.JobApplications
+            .FirstOrDefaultAsync(ja => ja.Id == id, cancellationToken);
+
+        if (application is null)
+            return false;
+
+        application.DeletedAt = DateTime.UtcNow;
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+        _applicationListCacheState.Invalidate();
+
+        return true;
+    }
 }

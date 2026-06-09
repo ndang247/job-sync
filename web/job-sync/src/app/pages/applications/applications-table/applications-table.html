@@ -89,6 +89,14 @@
                   >
                     Edit
                   </button>
+                  <button
+                    class="table-action table-action-danger"
+                    type="button"
+                    data-testid="delete-application"
+                    (click)="onDelete(app.id, $event)"
+                  >
+                    Delete
+                  </button>
                 </div>
               </div>
             }

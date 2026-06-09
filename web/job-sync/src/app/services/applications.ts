@@ -2,7 +2,7 @@ import { computed, inject, Injectable, signal } from '@angular/core';
 import { DOCUMENT } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
 import * as signalR from '@microsoft/signalr';
-import { map, Observable, tap } from 'rxjs';
+import { firstValueFrom, map, Observable, tap } from 'rxjs';
 import { StorageService } from './storage/storage';
 
 export type JobApplicationStatus =
@@ -102,6 +102,12 @@ export class ApplicationsService {
   readonly syncState = signal<SyncState>({ syncing: false, progress: 0, stage: '', caption: '' });
   readonly syncModalOpen = signal(false);
   readonly selectedAccountId = signal('primary');
+  readonly deleteModalOpen = signal(false);
+  readonly pendingDeleteId = signal<string | null>(null);
+  readonly deleteInProgress = signal(false);
+  readonly deleteError = signal('');
+
+  private deleteModalTrigger: HTMLElement | null = null;
 
   readonly filteredApplications = computed(() => {
     const query = this.searchQuery().trim().toLowerCase();
@@ -131,6 +137,12 @@ export class ApplicationsService {
     return this.paginationStart() + this.pageItems().length - 1;
   });
 
+  readonly pendingDeleteApplication = computed(() => {
+    const id = this.pendingDeleteId();
+    if (!id) return null;
+    return this.applications().find((application) => application.id === id) ?? null;
+  });
+
   loadApplications(page = 1): void {
     this.loading.set(true);
     this.http
@@ -142,7 +154,11 @@ export class ApplicationsService {
       })
       .subscribe({
         next: (response) => {
-          if (response.items.length === 0 && response.totalCount > 0 && page > response.totalPages) {
+          if (
+            response.items.length === 0 &&
+            response.totalCount > 0 &&
+            page > response.totalPages
+          ) {
             this.loadApplications(response.totalPages);
             return;
           }
@@ -217,6 +233,57 @@ export class ApplicationsService {
     this.syncModalOpen.set(false);
   }
 
+  openDeleteModal(id: string, trigger?: HTMLElement): void {
+    if (this.loading() || this.syncState().syncing || this.deleteInProgress()) return;
+
+    const application = this.applications().find((item) => item.id === id);
+    if (!application) return;
+
+    this.pendingDeleteId.set(id);
+    this.deleteError.set('');
+    this.deleteModalOpen.set(true);
+    this.deleteModalTrigger = trigger ?? null;
+  }
+
+  closeDeleteModal(): void {
+    if (this.deleteInProgress()) return;
+
+    this.deleteModalOpen.set(false);
+    this.pendingDeleteId.set(null);
+    this.deleteError.set('');
+    this.focusDeleteModalTrigger();
+  }
+
+  async confirmDeleteApplication(): Promise<void> {
+    if (this.deleteInProgress()) return;
+
+    const application = this.pendingDeleteApplication();
+    if (!application) {
+      this.closeDeleteModal();
+      return;
+    }
+
+    this.deleteInProgress.set(true);
+    this.deleteError.set('');
+
+    try {
+      await firstValueFrom(
+        this.http.delete<void>(`${API_BASE_URL}/api/v1/applications/${application.id}`),
+      );
+
+      this.deleteInProgress.set(false);
+      this.deleteModalOpen.set(false);
+      this.pendingDeleteId.set(null);
+      this.deleteError.set('');
+      this.statusNote.set(`${application.companyName} was removed from the tracker.`);
+      this.loadApplications(this.safePage());
+      this.focusDeleteModalTrigger();
+    } catch {
+      this.deleteInProgress.set(false);
+      this.deleteError.set('Could not delete this application. Try again.');
+    }
+  }
+
   async runSync(accountId: string): Promise<void> {
     const account = this.accounts().find((a) => a.id === accountId) ?? this.accounts()[0];
     if (!account || this.syncState().syncing) return;
@@ -264,11 +331,11 @@ export class ApplicationsService {
 
       await connection.start();
 
-      const { jobId } = (await this.http
-        .post<{ jobId: string }>(`${API_BASE_URL}/api/v1/sync`, {
+      const { jobId } = await firstValueFrom(
+        this.http.post<{ jobId: string }>(`${API_BASE_URL}/api/v1/sync`, {
           emailConnectionId: account.id,
-        })
-        .toPromise()) as { jobId: string };
+        }),
+      );
 
       await connection.invoke('JoinJob', jobId);
     } catch (error) {
@@ -313,6 +380,15 @@ export class ApplicationsService {
     }
   }
 
+  private focusDeleteModalTrigger(): void {
+    const trigger = this.deleteModalTrigger;
+    this.deleteModalTrigger = null;
+
+    if (trigger && this.document.body.contains(trigger)) {
+      trigger.focus();
+    }
+  }
+
   private mapApplication(application: JobApplicationResponse): JobApplication {
     return {
       id: application.id,
@@ -330,7 +406,10 @@ export class ApplicationsService {
   }
 
   private toStatusKey(status: string): JobApplicationStatusKey {
-    const normalized = status.trim().toLowerCase().replace(/[\s-]+/g, '');
+    const normalized = status
+      .trim()
+      .toLowerCase()
+      .replace(/[\s-]+/g, '');
     switch (normalized) {
       case 'interviewing':
         return 'interviewing';

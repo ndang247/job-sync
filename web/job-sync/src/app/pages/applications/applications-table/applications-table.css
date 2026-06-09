@@ -217,8 +217,11 @@
 }
 
 .action-cell {
+  display: flex;
+  flex-wrap: wrap;
   align-items: start;
-  justify-items: start;
+  justify-content: flex-start;
+  gap: 10px;
   white-space: nowrap;
 }
 
@@ -234,6 +237,19 @@
 .table-action:focus-visible {
   border-color: var(--accent);
   color: var(--accent);
+}
+
+.table-action-danger {
+  border-color: color-mix(in oklab, var(--accent) 52%, oklch(45% 0.17 28));
+  background: color-mix(in oklab, var(--accent) 14%, var(--surface));
+  color: oklch(43% 0.17 28);
+}
+
+.table-action-danger:hover,
+.table-action-danger:focus-visible {
+  border-color: oklch(43% 0.17 28);
+  background: color-mix(in oklab, var(--accent) 22%, var(--surface));
+  color: oklch(43% 0.17 28);
 }
 
 .table-action:focus-visible {
