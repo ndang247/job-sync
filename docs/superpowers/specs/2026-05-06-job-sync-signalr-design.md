@@ -1,6 +1,4 @@
-# Job Sync — Design Spec
-
-> Last updated: 2026-05-28 (aligned to current `api-web` implementation)
+# Job Sync SignalR — Design Spec
 
 ## Overview
 
