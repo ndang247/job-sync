@@ -1,19 +1,21 @@
 using core.Entities;
+using core.Interfaces;
+using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 
 namespace infrastructure.Data;
 
-public class AppDbContext : DbContext
+public class AppDbContext : IdentityUserContext<User, Guid>
 {
     public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
 
-    public DbSet<User> Users => Set<User>();
     public DbSet<EmailConnection> EmailConnections => Set<EmailConnection>();
     public DbSet<SyncJob> SyncJobs => Set<SyncJob>();
     public DbSet<JobApplication> JobApplications => Set<JobApplication>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        base.OnModelCreating(modelBuilder);
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(AppDbContext).Assembly);
     }
 
@@ -31,16 +33,19 @@ public class AppDbContext : DbContext
 
     private void SetTimestamps()
     {
-        var entries = ChangeTracker.Entries<BaseEntity>();
+        var entries = ChangeTracker.Entries()
+            .Where(entry => entry.Entity is IAuditableEntity);
+
         foreach (var entry in entries)
         {
+            var entity = (IAuditableEntity)entry.Entity;
             if (entry.State == EntityState.Added)
             {
-                entry.Entity.CreatedAt = DateTime.UtcNow;
+                entity.CreatedAt = DateTime.UtcNow;
             }
             else if (entry.State == EntityState.Modified)
             {
-                entry.Entity.UpdatedAt = DateTime.UtcNow;
+                entity.UpdatedAt = DateTime.UtcNow;
             }
         }
     }

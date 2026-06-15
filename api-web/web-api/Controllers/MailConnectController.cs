@@ -1,13 +1,4 @@
-using System.Security.Cryptography;
-using Google.Apis.Gmail.v1;
-using core.Entities;
-using core.Enums;
-using core.Interfaces;
-using infrastructure.Data;
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.WebUtilities;
-using Microsoft.EntityFrameworkCore;
 
 namespace web_api.Controllers;
 
@@ -15,115 +6,25 @@ namespace web_api.Controllers;
 [Route("api/v1/mail-connect")]
 public class MailConnectController : ControllerBase
 {
-    private readonly AppDbContext _dbContext;
-    private readonly IConfiguration _configuration;
-    private readonly IGoogleTokenExchanger _tokenExchanger;
-
-    public MailConnectController(AppDbContext dbContext, IConfiguration configuration, IGoogleTokenExchanger tokenExchanger)
-    {
-        _dbContext = dbContext;
-        _configuration = configuration;
-        _tokenExchanger = tokenExchanger;
-    }
+    private const string ErrorCode = "PLATFORM_AUTH_REQUIRED";
+    private const string ErrorMessage = "Platform authentication must be enabled before connecting Gmail.";
 
     [HttpGet("gmail/start")]
     public IActionResult GmailStart()
     {
-        var clientId = _configuration["Google:ClientId"]!;
-        var redirectUri = _configuration["Google:RedirectUri"]!;
-
-        var scopes = string.Join(" ", new[]
-        {
-            GmailService.Scope.GmailReadonly,
-            "openid",
-            "profile",
-            "email"
-        });
-
-        var state = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
-        HttpContext.Session.SetString("GoogleOAuthState", state);
-
-        var url = QueryHelpers.AddQueryString(
-            "https://accounts.google.com/o/oauth2/v2/auth",
-            new Dictionary<string, string?>
-            {
-                ["client_id"] = clientId,
-                ["redirect_uri"] = redirectUri,
-                ["response_type"] = "code",
-                ["scope"] = scopes,
-                ["access_type"] = "offline",
-                ["prompt"] = "consent",
-                ["state"] = state
-            });
-
-        return Redirect(url);
+        return PlatformAuthRequired();
     }
 
     [HttpGet("gmail/callback")]
-    public async Task<IActionResult> GmailCallback([FromQuery] string? code, [FromQuery] string? state, [FromQuery] string? error)
+    public IActionResult GmailCallback()
     {
-        var frontendUrl = _configuration["FrontendUrl"]!;
+        return PlatformAuthRequired();
+    }
 
-        if (!string.IsNullOrEmpty(error) || string.IsNullOrEmpty(code))
-        {
-            return Redirect($"{frontendUrl}/connect?error={Uri.EscapeDataString(error ?? "no_code")}");
-        }
-
-        var expectedState = HttpContext.Session.GetString("GoogleOAuthState");
-        if (string.IsNullOrEmpty(expectedState) || expectedState != state)
-        {
-            return BadRequest("Invalid OAuth state.");
-        }
-        HttpContext.Session.Remove("GoogleOAuthState");
-
-        var tokenResult = await _tokenExchanger.ExchangeCodeAsync(code);
-
-        // Find existing user by SubjectId, or create a new one
-        var existingConnection = await _dbContext.EmailConnections
-            .Include(ec => ec.User)
-            .FirstOrDefaultAsync(ec => ec.SubjectId == tokenResult.SubjectId);
-
-        User user;
-        EmailConnection connection;
-
-        if (existingConnection is not null)
-        {
-            // Returning user — update tokens
-            user = existingConnection.User;
-            existingConnection.RefreshToken = tokenResult.RefreshToken;
-            existingConnection.GrantedScopes = tokenResult.GrantedScopes;
-            existingConnection.Email = tokenResult.Email;
-            existingConnection.Status = EmailConnectionStatus.Active;
-            connection = existingConnection;
-        }
-        else
-        {
-            // New user
-            // This is acceptable for now without authentication
-            user = new User
-            {
-                Id = Guid.NewGuid(),
-                FirstName = tokenResult.GivenName,
-                LastName = tokenResult.FamilyName,
-            };
-            _dbContext.Users.Add(user);
-
-            connection = new EmailConnection
-            {
-                Id = Guid.NewGuid(),
-                UserId = user.Id,
-                Email = tokenResult.Email,
-                SubjectId = tokenResult.SubjectId,
-                RefreshToken = tokenResult.RefreshToken,
-                GrantedScopes = tokenResult.GrantedScopes,
-                Provider = EmailConnectionProvider.Gmail,
-                Status = EmailConnectionStatus.Active
-            };
-            _dbContext.EmailConnections.Add(connection);
-        }
-
-        await _dbContext.SaveChangesAsync();
-
-        return Redirect($"{frontendUrl}/?userId={user.Id}&connectionId={connection.Id}");
+    private ObjectResult PlatformAuthRequired()
+    {
+        return StatusCode(
+            StatusCodes.Status503ServiceUnavailable,
+            new { code = ErrorCode, error = ErrorMessage });
     }
 }
