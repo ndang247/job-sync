@@ -10,11 +10,24 @@ public class ConnectionsControllerTests : IClassFixture<CustomWebApplicationFact
 {
     private readonly HttpClient _client;
     private readonly CustomWebApplicationFactory _factory;
+    private readonly Guid _userId = Guid.NewGuid();
 
     public ConnectionsControllerTests(CustomWebApplicationFactory factory)
     {
         _factory = factory;
-        _client = factory.CreateClient();
+        using (var db = _factory.CreateDbContext())
+        {
+            db.Users.Add(new User
+            {
+                Id = _userId,
+                UserName = $"connections-{_userId:N}@example.com",
+                Email = $"connections-{_userId:N}@example.com",
+                FirstName = "Test",
+                LastName = "User"
+            });
+            db.SaveChanges();
+        }
+        _client = factory.CreateAuthenticatedClient(_userId);
     }
 
     [Fact]
@@ -31,22 +44,14 @@ public class ConnectionsControllerTests : IClassFixture<CustomWebApplicationFact
     [Fact]
     public async Task GetAll_WithConnections_ReturnsActiveConnections()
     {
-        var userId = Guid.NewGuid();
         var connectionId = Guid.NewGuid();
 
         using (var db = _factory.CreateDbContext())
         {
-            db.Users.Add(new User
-            {
-                Id = userId,
-                FirstName = "Test",
-                LastName = "User"
-            });
-
             db.EmailConnections.Add(new EmailConnection
             {
                 Id = connectionId,
-                UserId = userId,
+                UserId = _userId,
                 Email = "test@gmail.com",
                 SubjectId = "sub-123",
                 RefreshToken = "refresh-token",
@@ -74,24 +79,16 @@ public class ConnectionsControllerTests : IClassFixture<CustomWebApplicationFact
     [Fact]
     public async Task GetAll_DoesNotReturnSoftDeletedConnections()
     {
-        var userId = Guid.NewGuid();
         var activeId = Guid.NewGuid();
         var deletedId = Guid.NewGuid();
 
         using (var db = _factory.CreateDbContext())
         {
-            db.Users.Add(new User
-            {
-                Id = userId,
-                FirstName = "Soft",
-                LastName = "Delete"
-            });
-
             db.EmailConnections.AddRange(
                 new EmailConnection
                 {
                     Id = activeId,
-                    UserId = userId,
+                    UserId = _userId,
                     Email = "active@gmail.com",
                     SubjectId = "sub-active",
                     RefreshToken = "token-active",
@@ -102,7 +99,7 @@ public class ConnectionsControllerTests : IClassFixture<CustomWebApplicationFact
                 new EmailConnection
                 {
                     Id = deletedId,
-                    UserId = userId,
+                    UserId = _userId,
                     Email = "deleted@gmail.com",
                     SubjectId = "sub-deleted",
                     RefreshToken = "token-deleted",
@@ -131,21 +128,12 @@ public class ConnectionsControllerTests : IClassFixture<CustomWebApplicationFact
     [Fact]
     public async Task GetAll_DoesNotExposeSensitiveFields()
     {
-        var userId = Guid.NewGuid();
-
         using (var db = _factory.CreateDbContext())
         {
-            db.Users.Add(new User
-            {
-                Id = userId,
-                FirstName = "Sensitive",
-                LastName = "Check"
-            });
-
             db.EmailConnections.Add(new EmailConnection
             {
                 Id = Guid.NewGuid(),
-                UserId = userId,
+                UserId = _userId,
                 Email = "sensitive@gmail.com",
                 SubjectId = "sub-sensitive",
                 RefreshToken = "secret-refresh-token",
@@ -163,5 +151,41 @@ public class ConnectionsControllerTests : IClassFixture<CustomWebApplicationFact
         Assert.DoesNotContain("secret-refresh-token", content);
         Assert.DoesNotContain("sub-sensitive", content);
         Assert.DoesNotContain("grantedScopes", content, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task GetAll_DoesNotReturnAnotherUsersConnection()
+    {
+        var otherUserId = Guid.NewGuid();
+        var otherConnectionId = Guid.NewGuid();
+        using (var db = _factory.CreateDbContext())
+        {
+            db.Users.Add(new User
+            {
+                Id = otherUserId,
+                UserName = $"other-{otherUserId:N}@example.com",
+                Email = $"other-{otherUserId:N}@example.com",
+                FirstName = "Other",
+                LastName = "User"
+            });
+            db.EmailConnections.Add(new EmailConnection
+            {
+                Id = otherConnectionId,
+                UserId = otherUserId,
+                Email = "other@gmail.com",
+                SubjectId = $"subject-{Guid.NewGuid():N}",
+                RefreshToken = "refresh-token",
+                GrantedScopes = "gmail.readonly"
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var response = await _client.GetAsync("/api/v1/connections");
+        var content = await response.Content.ReadFromJsonAsync<JsonElement>();
+        var ids = content.EnumerateArray()
+            .Select(connection => connection.GetProperty("id").GetGuid())
+            .ToList();
+
+        Assert.DoesNotContain(otherConnectionId, ids);
     }
 }

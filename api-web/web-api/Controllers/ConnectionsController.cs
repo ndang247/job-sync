@@ -1,10 +1,13 @@
 using infrastructure.Data;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
+using web_api.Authentication;
 
 namespace web_api.Controllers;
 
 [ApiController]
+[Authorize]
 [Route("api/v1/connections")]
 public class ConnectionsController : ControllerBase
 {
@@ -16,10 +19,13 @@ public class ConnectionsController : ControllerBase
     }
 
     [HttpGet]
-    public async Task<IActionResult> GetAll()
+    public async Task<IActionResult> GetAll(CancellationToken cancellationToken)
     {
+        if (!User.TryGetUserId(out var userId))
+            return Unauthorized();
+
         var connections = await _dbContext.EmailConnections
-            .Where(ec => ec.DeletedAt == null)
+            .Where(ec => ec.DeletedAt == null && ec.UserId == userId)
             .Select(ec => new
             {
                 ec.Id,
@@ -28,7 +34,7 @@ public class ConnectionsController : ControllerBase
                 Status = ec.Status.ToString(),
                 ec.CreatedAt
             })
-            .ToListAsync();
+            .ToListAsync(cancellationToken);
 
         return Ok(connections);
     }

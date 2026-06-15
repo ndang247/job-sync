@@ -12,6 +12,7 @@ public class AppDbContext : IdentityUserContext<User, Guid>
     public DbSet<EmailConnection> EmailConnections => Set<EmailConnection>();
     public DbSet<SyncJob> SyncJobs => Set<SyncJob>();
     public DbSet<JobApplication> JobApplications => Set<JobApplication>();
+    public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

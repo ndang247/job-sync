@@ -22,7 +22,7 @@ public class EmailConnectionConfiguration : IEntityTypeConfiguration<EmailConnec
                 .HasConversion<string>()
                 .HasMaxLength(30)
                 .IsRequired();
-        builder.HasIndex(ec => new { ec.UserId, ec.SubjectId }).IsUnique();
+        builder.HasIndex(ec => new { ec.Provider, ec.SubjectId }).IsUnique();
         builder.HasQueryFilter(ec => ec.DeletedAt == null);
     }
 }

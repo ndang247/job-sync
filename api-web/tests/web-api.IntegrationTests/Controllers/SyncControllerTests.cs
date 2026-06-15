@@ -11,11 +11,24 @@ public class SyncControllerTests : IClassFixture<CustomWebApplicationFactory>
 {
     private readonly HttpClient _client;
     private readonly CustomWebApplicationFactory _factory;
+    private readonly Guid _userId = Guid.NewGuid();
 
     public SyncControllerTests(CustomWebApplicationFactory factory)
     {
         _factory = factory;
-        _client = factory.CreateClient();
+        using (var db = _factory.CreateDbContext())
+        {
+            db.Users.Add(new User
+            {
+                Id = _userId,
+                UserName = $"sync-{_userId:N}@example.com",
+                Email = $"sync-{_userId:N}@example.com",
+                FirstName = "Test",
+                LastName = "User"
+            });
+            db.SaveChanges();
+        }
+        _client = factory.CreateAuthenticatedClient(_userId);
     }
 
     [Fact]
@@ -64,18 +77,15 @@ public class SyncControllerTests : IClassFixture<CustomWebApplicationFactory>
     }
 
     [Fact]
-    public async Task StartSync_NoConnection_ReturnsConflictWithGrantCode()
+    public async Task StartSync_NoConnection_ReturnsNotFound()
     {
         var response = await _client.PostAsJsonAsync("/api/v1/sync", new { emailConnectionId = Guid.NewGuid() });
 
-        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
-
-        var content = await response.Content.ReadFromJsonAsync<JsonElement>();
-        Assert.Equal("CONNECTION_REQUIRES_GRANT", content.GetProperty("code").GetString());
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
     [Fact]
-    public async Task StartSync_ConnectionWithEmptyUserId_ReturnsConflict()
+    public async Task StartSync_ConnectionOwnedByAnotherUser_ReturnsNotFound()
     {
         Guid connId;
         using (var db = _factory.CreateDbContext())
@@ -97,25 +107,19 @@ public class SyncControllerTests : IClassFixture<CustomWebApplicationFactory>
 
         var response = await _client.PostAsJsonAsync("/api/v1/sync", new { emailConnectionId = connId });
 
-        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
-
-        var content = await response.Content.ReadFromJsonAsync<JsonElement>();
-        Assert.Equal("CONNECTION_REQUIRES_GRANT", content.GetProperty("code").GetString());
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
     [Fact]
     public async Task StartSync_NeedsReconnectConnection_ReturnsConflict()
     {
-        Guid userId;
         Guid connId;
         using (var db = _factory.CreateDbContext())
         {
-            var user = new User { Id = Guid.NewGuid(), FirstName = "Test", LastName = "User" };
-            db.Users.Add(user);
             var conn = new EmailConnection
             {
                 Id = Guid.NewGuid(),
-                UserId = user.Id,
+                UserId = _userId,
                 Email = "test@gmail.com",
                 SubjectId = "sub-needs-reconnect",
                 RefreshToken = "rt",
@@ -124,7 +128,6 @@ public class SyncControllerTests : IClassFixture<CustomWebApplicationFactory>
             };
             db.EmailConnections.Add(conn);
             await db.SaveChangesAsync();
-            userId = user.Id;
             connId = conn.Id;
         }
 
@@ -379,18 +382,10 @@ public class SyncControllerTests : IClassFixture<CustomWebApplicationFactory>
     private async Task<(Guid UserId, Guid ConnectionId)> SeedUserWithConnectionAsync()
     {
         using var db = _factory.CreateDbContext();
-        var user = new User
-        {
-            Id = Guid.NewGuid(),
-            FirstName = "Test",
-            LastName = "User",
-        };
-        db.Users.Add(user);
-
         var connection = new EmailConnection
         {
             Id = Guid.NewGuid(),
-            UserId = user.Id,
+            UserId = _userId,
             Email = $"test-{Guid.NewGuid()}@gmail.com",
             SubjectId = $"sub-{Guid.NewGuid()}",
             RefreshToken = "test-refresh-token",
@@ -400,6 +395,6 @@ public class SyncControllerTests : IClassFixture<CustomWebApplicationFactory>
         db.EmailConnections.Add(connection);
 
         await db.SaveChangesAsync();
-        return (user.Id, connection.Id);
+        return (_userId, connection.Id);
     }
 }

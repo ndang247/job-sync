@@ -11,4 +11,6 @@ public class User : IdentityUser<Guid>, IAuditableEntity
     public DateTime? UpdatedAt { get; set; }
     public DateTime? DeletedAt { get; set; }
     public ICollection<EmailConnection> EmailConnections { get; set; } = [];
+    public ICollection<JobApplication> JobApplications { get; set; } = [];
+    public ICollection<RefreshToken> RefreshTokens { get; set; } = [];
 }

@@ -22,6 +22,13 @@ public class JobApplicationConfiguration : IEntityTypeConfiguration<JobApplicati
         builder.HasIndex(ja => new { ja.CreatedAt, ja.Id })
             .IsDescending(true, true)
             .HasFilter("\"DeletedAt\" IS NULL");
+        builder.HasIndex(ja => new { ja.UserId, ja.CreatedAt, ja.Id })
+            .IsDescending(false, true, true)
+            .HasFilter("\"DeletedAt\" IS NULL");
+        builder.HasOne(ja => ja.User)
+            .WithMany(user => user.JobApplications)
+            .HasForeignKey(ja => ja.UserId)
+            .OnDelete(DeleteBehavior.Cascade);
         builder.HasOne(ja => ja.EmailConnection)
             .WithMany()
             .HasForeignKey(ja => ja.EmailConnectionId)

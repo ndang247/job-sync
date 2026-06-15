@@ -21,6 +21,11 @@ public class JobApplicationService : IJobApplicationService
         if (applications.Count == 0)
             return;
 
+        var userId = await _dbContext.EmailConnections
+            .Where(connection => connection.Id == emailConnectionId)
+            .Select(connection => connection.UserId)
+            .SingleAsync(cancellationToken);
+
         var incomingMessageIds = applications
             .Select(app => app.MessageId)
             .Distinct()
@@ -39,6 +44,7 @@ public class JobApplicationService : IJobApplicationService
         {
             if (existingMessageIds.Contains(app.MessageId))
                 continue;
+            app.UserId = userId;
             app.EmailConnectionId = emailConnectionId;
             _dbContext.JobApplications.Add(app);
             added = true;
@@ -51,10 +57,15 @@ public class JobApplicationService : IJobApplicationService
         _applicationListCacheState.Invalidate();
     }
 
-    public async Task<bool> DeleteApplicationAsync(Guid id, CancellationToken cancellationToken = default)
+    public async Task<bool> DeleteApplicationAsync(
+        Guid userId,
+        Guid id,
+        CancellationToken cancellationToken = default)
     {
         var application = await _dbContext.JobApplications
-            .FirstOrDefaultAsync(ja => ja.Id == id, cancellationToken);
+            .FirstOrDefaultAsync(
+                ja => ja.Id == id && ja.UserId == userId,
+                cancellationToken);
 
         if (application is null)
             return false;

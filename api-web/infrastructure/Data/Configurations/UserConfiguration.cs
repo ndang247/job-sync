@@ -11,6 +11,10 @@ public class UserConfiguration : IEntityTypeConfiguration<User>
         builder.ToTable("Users");
         builder.Property(u => u.FirstName).HasMaxLength(100).IsRequired();
         builder.Property(u => u.LastName).HasMaxLength(100).IsRequired();
+        builder.HasIndex(u => u.NormalizedEmail)
+            .HasDatabaseName("EmailIndex")
+            .IsUnique()
+            .HasFilter("\"NormalizedEmail\" IS NOT NULL");
         builder.HasMany(u => u.EmailConnections)
             .WithOne(ec => ec.User)
             .HasForeignKey(ec => ec.UserId)
