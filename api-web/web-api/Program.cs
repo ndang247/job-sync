@@ -1,9 +1,11 @@
 using web_api.Hubs;
 using web_api.Services;
+using core.Entities;
 using core.Interfaces;
 using infrastructure.Data;
 using infrastructure.Services;
 using worker;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -25,6 +27,14 @@ builder.Services.AddSession(options =>
 
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
+
+builder.Services
+    .AddIdentityCore<User>(options =>
+    {
+        options.User.RequireUniqueEmail = false;
+    })
+    .AddEntityFrameworkStores<AppDbContext>()
+    .AddDefaultTokenProviders();
 
 builder.Services.AddScoped<IEmailService, GmailService>();
 builder.Services.AddScoped<IAIService, OpenAIService>();

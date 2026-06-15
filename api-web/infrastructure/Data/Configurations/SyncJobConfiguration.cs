@@ -32,7 +32,7 @@ public class SyncJobConfiguration : IEntityTypeConfiguration<SyncJob>
         builder.HasOne(s => s.EmailConnection)
             .WithMany()
             .HasForeignKey(s => s.EmailConnectionId)
-            .OnDelete(DeleteBehavior.Restrict);
+            .OnDelete(DeleteBehavior.Cascade);
         builder.HasQueryFilter(s => s.DeletedAt == null);
     }
 }
