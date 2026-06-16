@@ -52,6 +52,7 @@ public class IdentityStoreTests : IClassFixture<CustomWebApplicationFactory>
             Id = Guid.NewGuid(),
             UserName = "+61412345678",
             PhoneNumber = "+61412345678",
+            Email = "phone-user@example.com",
             FirstName = "Phone",
             LastName = "User"
         };
@@ -90,6 +91,7 @@ public class IdentityStoreTests : IClassFixture<CustomWebApplicationFactory>
 
         AssertRequiredCascadeRelationship<EmailConnection>(dbContext);
         AssertRequiredCascadeRelationship<SyncJob>(dbContext);
+        AssertRequiredCascadeRelationship<JobApplication>(dbContext);
     }
 
     [Fact]

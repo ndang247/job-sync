@@ -5,12 +5,15 @@ using core.Enums;
 using core.Interfaces;
 using infrastructure.Data;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
+using web_api.Authentication;
 
 namespace web_api.Controllers;
 
 [ApiController]
+[Authorize]
 [Route("api/v1/applications")]
 public class ApplicationsController : ControllerBase
 {
@@ -42,15 +45,20 @@ public class ApplicationsController : ControllerBase
         [FromQuery] int pageSize = DefaultPageSize,
         CancellationToken cancellationToken = default)
     {
+        if (!User.TryGetUserId(out var userId))
+            return Unauthorized();
+
         page = Math.Max(1, page);
         pageSize = Math.Clamp(pageSize, 1, MaxPageSize);
 
-        var cacheKey = $"applications:v1:version:{_applicationListCacheState.Version}:page:{page}:pageSize:{pageSize}";
+        var cacheKey = $"applications:v1:user:{userId}:version:{_applicationListCacheState.Version}:page:{page}:pageSize:{pageSize}";
         var response = await _cache.GetOrCreateAsync(cacheKey, async entry =>
         {
             entry.AbsoluteExpirationRelativeToNow = CacheDuration;
 
-            var query = _dbContext.JobApplications.AsNoTracking();
+            var query = _dbContext.JobApplications
+                .AsNoTracking()
+                .Where(ja => ja.UserId == userId);
             var totalCount = await query.CountAsync(cancellationToken);
             var totalPages = Math.Max(1, (int)Math.Ceiling(totalCount / (double)pageSize));
 
@@ -85,9 +93,12 @@ public class ApplicationsController : ControllerBase
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> GetById(Guid id, CancellationToken cancellationToken = default)
     {
+        if (!User.TryGetUserId(out var userId))
+            return Unauthorized();
+
         var application = await _dbContext.JobApplications
             .AsNoTracking()
-            .Where(ja => ja.Id == id)
+            .Where(ja => ja.Id == id && ja.UserId == userId)
             .Select(ja => new ApplicationListItemProjection(
                 ja.Id,
                 ja.CompanyName,
@@ -110,9 +121,14 @@ public class ApplicationsController : ControllerBase
         [FromBody] UpdateApplicationRequest request,
         CancellationToken cancellationToken = default)
     {
+        if (!User.TryGetUserId(out var userId))
+            return Unauthorized();
+
         var application = await _dbContext.JobApplications
             .Include(ja => ja.EmailConnection)
-            .FirstOrDefaultAsync(ja => ja.Id == id, cancellationToken);
+            .FirstOrDefaultAsync(
+                ja => ja.Id == id && ja.UserId == userId,
+                cancellationToken);
 
         if (application is null)
             return NotFound();
@@ -141,7 +157,13 @@ public class ApplicationsController : ControllerBase
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken = default)
     {
-        var deleted = await _jobApplicationService.DeleteApplicationAsync(id, cancellationToken);
+        if (!User.TryGetUserId(out var userId))
+            return Unauthorized();
+
+        var deleted = await _jobApplicationService.DeleteApplicationAsync(
+            userId,
+            id,
+            cancellationToken);
 
         return deleted ? NoContent() : NotFound();
     }

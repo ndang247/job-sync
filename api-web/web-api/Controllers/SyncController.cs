@@ -4,11 +4,14 @@ using core.Enums;
 using core.Interfaces;
 using infrastructure.Data;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
+using web_api.Authentication;
 
 namespace web_api.Controllers;
 
 [ApiController]
+[Authorize]
 [Route("api/v1/sync")]
 public class SyncController : ControllerBase
 {
@@ -22,22 +25,28 @@ public class SyncController : ControllerBase
     }
 
     [HttpPost]
-    public async Task<IActionResult> StartSync([FromBody] StartSyncRequest request)
+    public async Task<IActionResult> StartSync(
+        [FromBody] StartSyncRequest request,
+        CancellationToken cancellationToken)
     {
-        var connection = await _dbContext.EmailConnections
-            .Where(ec => ec.Id == request.EmailConnectionId)
-            .Select(ec => new { ec.UserId, ec.Status })
-            .FirstOrDefaultAsync();
+        if (!User.TryGetUserId(out var userId))
+            return Unauthorized();
 
-        if (connection is null || connection.UserId == Guid.Empty)
-            return Conflict(new { code = "CONNECTION_REQUIRES_GRANT", error = "Email connection requires grant/reconnect." });
+        var connection = await _dbContext.EmailConnections
+            .Where(ec => ec.Id == request.EmailConnectionId && ec.UserId == userId)
+            .Select(ec => new { ec.UserId, ec.Status })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (connection is null)
+            return NotFound();
 
         if (connection.Status != EmailConnectionStatus.Active)
             return Conflict(new { code = "CONNECTION_REQUIRES_GRANT", error = "Email connection requires grant/reconnect." });
 
         var hasActiveJob = await _dbContext.SyncJobs.AnyAsync(j =>
             j.EmailConnectionId == request.EmailConnectionId &&
-            (j.Status == SyncJobStatus.Pending || j.Status == SyncJobStatus.Processing));
+            (j.Status == SyncJobStatus.Pending || j.Status == SyncJobStatus.Processing),
+            cancellationToken);
         if (hasActiveJob)
             return Conflict(new { error = "A sync job is already in progress for this email connection" });
 
@@ -50,17 +59,24 @@ public class SyncController : ControllerBase
         };
 
         _dbContext.SyncJobs.Add(job);
-        await _dbContext.SaveChangesAsync();
+        await _dbContext.SaveChangesAsync(cancellationToken);
 
-        await _syncJobChannel.WriteAsync(job.Id);
+        await _syncJobChannel.WriteAsync(job.Id, cancellationToken);
 
         return Ok(new { jobId = job.Id });
     }
 
     [HttpGet("status/{jobId:guid}")]
-    public async Task<IActionResult> GetStatus(Guid jobId)
+    public async Task<IActionResult> GetStatus(
+        Guid jobId,
+        CancellationToken cancellationToken)
     {
-        var job = await _dbContext.SyncJobs.FirstOrDefaultAsync(j => j.Id == jobId);
+        if (!User.TryGetUserId(out var userId))
+            return Unauthorized();
+
+        var job = await _dbContext.SyncJobs.FirstOrDefaultAsync(
+            j => j.Id == jobId && j.UserId == userId,
+            cancellationToken);
         if (job is null)
             return NotFound();
 

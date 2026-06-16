@@ -132,7 +132,9 @@ namespace infrastructure.Data.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("UserId", "SubjectId")
+                    b.HasIndex("UserId");
+
+                    b.HasIndex("Provider", "SubjectId")
                         .IsUnique();
 
                     b.ToTable("EmailConnections");
@@ -177,6 +179,9 @@ namespace infrastructure.Data.Migrations
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
                     b.HasKey("Id");
 
                     b.HasIndex("EmailConnectionId");
@@ -188,7 +193,51 @@ namespace infrastructure.Data.Migrations
                         .IsDescending()
                         .HasFilter("\"DeletedAt\" IS NULL");
 
+                    b.HasIndex("UserId", "CreatedAt", "Id")
+                        .IsDescending(false, true, true)
+                        .HasFilter("\"DeletedAt\" IS NULL");
+
                     b.ToTable("JobApplications");
+                });
+
+            modelBuilder.Entity("core.Entities.RefreshToken", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("FamilyId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ReplacedByTokenHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<DateTimeOffset?>("RevokedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("TokenHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TokenHash")
+                        .IsUnique();
+
+                    b.HasIndex("UserId", "FamilyId");
+
+                    b.ToTable("RefreshTokens");
                 });
 
             modelBuilder.Entity("core.Entities.SyncJob", b =>
@@ -315,7 +364,9 @@ namespace infrastructure.Data.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("NormalizedEmail")
-                        .HasDatabaseName("EmailIndex");
+                        .IsUnique()
+                        .HasDatabaseName("EmailIndex")
+                        .HasFilter("\"NormalizedEmail\" IS NOT NULL");
 
                     b.HasIndex("NormalizedUserName")
                         .IsUnique()
@@ -370,7 +421,26 @@ namespace infrastructure.Data.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
+                    b.HasOne("core.Entities.User", "User")
+                        .WithMany("JobApplications")
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
                     b.Navigation("EmailConnection");
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("core.Entities.RefreshToken", b =>
+                {
+                    b.HasOne("core.Entities.User", "User")
+                        .WithMany("RefreshTokens")
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("core.Entities.SyncJob", b =>
@@ -395,6 +465,10 @@ namespace infrastructure.Data.Migrations
             modelBuilder.Entity("core.Entities.User", b =>
                 {
                     b.Navigation("EmailConnections");
+
+                    b.Navigation("JobApplications");
+
+                    b.Navigation("RefreshTokens");
                 });
 #pragma warning restore 612, 618
         }

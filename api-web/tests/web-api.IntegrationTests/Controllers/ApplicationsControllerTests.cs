@@ -13,12 +13,25 @@ public class ApplicationsControllerTests : IClassFixture<CustomWebApplicationFac
 {
     private readonly HttpClient _client;
     private readonly CustomWebApplicationFactory _factory;
+    private readonly Guid _userId = Guid.NewGuid();
 
     public ApplicationsControllerTests(CustomWebApplicationFactory factory)
     {
         _factory = factory;
         ResetDatabase();
-        _client = factory.CreateClient();
+        using (var db = _factory.CreateDbContext())
+        {
+            db.Users.Add(new User
+            {
+                Id = _userId,
+                UserName = $"applications-{_userId:N}@example.com",
+                Email = $"applications-{_userId:N}@example.com",
+                FirstName = "Test",
+                LastName = "User"
+            });
+            db.SaveChanges();
+        }
+        _client = factory.CreateAuthenticatedClient(_userId);
     }
 
     private void ResetDatabase()
@@ -58,6 +71,7 @@ public class ApplicationsControllerTests : IClassFixture<CustomWebApplicationFac
                 new JobApplication
                 {
                     Id = Guid.NewGuid(),
+                    UserId = _userId,
                     CompanyName = "Acme Corp",
                     JobRole = "Software Engineer",
                     AppliedDate = "15-05-2026",
@@ -68,6 +82,7 @@ public class ApplicationsControllerTests : IClassFixture<CustomWebApplicationFac
                 new JobApplication
                 {
                     Id = Guid.NewGuid(),
+                    UserId = _userId,
                     CompanyName = "Globex Inc",
                     JobRole = "Backend Developer",
                     AppliedDate = "14-05-2026",
@@ -101,6 +116,7 @@ public class ApplicationsControllerTests : IClassFixture<CustomWebApplicationFac
             db.JobApplications.Add(new JobApplication
             {
                 Id = appId,
+                    UserId = _userId,
                 CompanyName = "TestCo",
                 JobRole = "Fullstack Dev",
                 AppliedDate = "20-05-2026",
@@ -137,6 +153,7 @@ public class ApplicationsControllerTests : IClassFixture<CustomWebApplicationFac
             db.JobApplications.Add(new JobApplication
             {
                 Id = olderId,
+                    UserId = _userId,
                 CompanyName = olderName,
                 JobRole = "Dev",
                 AppliedDate = "10-05-2026",
@@ -147,6 +164,7 @@ public class ApplicationsControllerTests : IClassFixture<CustomWebApplicationFac
             db.JobApplications.Add(new JobApplication
             {
                 Id = newerId,
+                    UserId = _userId,
                 CompanyName = newerName,
                 JobRole = "Dev",
                 AppliedDate = "20-05-2026",
@@ -188,6 +206,7 @@ public class ApplicationsControllerTests : IClassFixture<CustomWebApplicationFac
             db.JobApplications.Add(new JobApplication
             {
                 Id = Guid.NewGuid(),
+                    UserId = _userId,
                 CompanyName = "DeletedCo",
                 JobRole = "Dev",
                 AppliedDate = "10-05-2026",
@@ -199,6 +218,7 @@ public class ApplicationsControllerTests : IClassFixture<CustomWebApplicationFac
             db.JobApplications.Add(new JobApplication
             {
                 Id = Guid.NewGuid(),
+                    UserId = _userId,
                 CompanyName = "ActiveCo",
                 JobRole = "Dev",
                 AppliedDate = "20-05-2026",
@@ -229,6 +249,7 @@ public class ApplicationsControllerTests : IClassFixture<CustomWebApplicationFac
             db.JobApplications.Add(new JobApplication
             {
                 Id = Guid.NewGuid(),
+                    UserId = _userId,
                 CompanyName = "EmailCo",
                 JobRole = "Dev",
                 AppliedDate = "20-05-2026",
@@ -323,6 +344,7 @@ public class ApplicationsControllerTests : IClassFixture<CustomWebApplicationFac
                 new()
                 {
                     Id = Guid.NewGuid(),
+                    UserId = _userId,
                     CompanyName = $"{testKey}-InsertedCo",
                     JobRole = "Dev",
                     AppliedDate = "20-05-2026",
@@ -346,6 +368,11 @@ public class ApplicationsControllerTests : IClassFixture<CustomWebApplicationFac
             .ToList();
 
         Assert.Contains($"{testKey}-InsertedCo", companies);
+
+        using var ownershipDb = _factory.CreateDbContext();
+        Assert.Equal(
+            _userId,
+            ownershipDb.JobApplications.Single(ja => ja.MessageId == messageId).UserId);
     }
 
     [Fact]
@@ -359,6 +386,7 @@ public class ApplicationsControllerTests : IClassFixture<CustomWebApplicationFac
             db.JobApplications.Add(new JobApplication
             {
                 Id = appId,
+                    UserId = _userId,
                 CompanyName = "DetailCo",
                 JobRole = "Platform Engineer",
                 AppliedDate = "21-05-2026",
@@ -391,6 +419,49 @@ public class ApplicationsControllerTests : IClassFixture<CustomWebApplicationFac
     }
 
     [Fact]
+    public async Task GetById_ApplicationOwnedByAnotherUser_ReturnsNotFound()
+    {
+        var otherUserId = Guid.NewGuid();
+        var connectionId = Guid.NewGuid();
+        var applicationId = Guid.NewGuid();
+        using (var db = _factory.CreateDbContext())
+        {
+            db.Users.Add(new User
+            {
+                Id = otherUserId,
+                UserName = $"other-{otherUserId:N}@example.com",
+                Email = $"other-{otherUserId:N}@example.com",
+                FirstName = "Other",
+                LastName = "User"
+            });
+            db.EmailConnections.Add(new EmailConnection
+            {
+                Id = connectionId,
+                UserId = otherUserId,
+                Email = "other@gmail.com",
+                SubjectId = $"subject-{Guid.NewGuid():N}",
+                RefreshToken = "refresh-token",
+                GrantedScopes = "gmail.readonly"
+            });
+            db.JobApplications.Add(new JobApplication
+            {
+                Id = applicationId,
+                UserId = otherUserId,
+                CompanyName = "HiddenCo",
+                JobRole = "Engineer",
+                AppliedDate = "15-06-2026",
+                MessageId = $"message-{Guid.NewGuid():N}",
+                EmailConnectionId = connectionId
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var response = await _client.GetAsync($"/api/v1/applications/{applicationId}");
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
     public async Task GetById_SoftDeletedApplication_ReturnsNotFound()
     {
         var connId = await SeedConnectionAsync();
@@ -401,6 +472,7 @@ public class ApplicationsControllerTests : IClassFixture<CustomWebApplicationFac
             db.JobApplications.Add(new JobApplication
             {
                 Id = appId,
+                    UserId = _userId,
                 CompanyName = "DeletedDetailCo",
                 JobRole = "Dev",
                 AppliedDate = "21-05-2026",
@@ -428,6 +500,7 @@ public class ApplicationsControllerTests : IClassFixture<CustomWebApplicationFac
             db.JobApplications.Add(new JobApplication
             {
                 Id = appId,
+                    UserId = _userId,
                 CompanyName = "BeforeCo",
                 JobRole = "Before Role",
                 AppliedDate = "20-05-2026",
@@ -499,6 +572,7 @@ public class ApplicationsControllerTests : IClassFixture<CustomWebApplicationFac
             db.JobApplications.Add(new JobApplication
             {
                 Id = appId,
+                    UserId = _userId,
                 CompanyName = "BeforeCo",
                 JobRole = "Before Role",
                 AppliedDate = "20-05-2026",
@@ -531,6 +605,7 @@ public class ApplicationsControllerTests : IClassFixture<CustomWebApplicationFac
             db.JobApplications.Add(new JobApplication
             {
                 Id = appId,
+                    UserId = _userId,
                 CompanyName = "CachedBeforeCo",
                 JobRole = "Dev",
                 AppliedDate = "20-05-2026",
@@ -574,6 +649,7 @@ public class ApplicationsControllerTests : IClassFixture<CustomWebApplicationFac
             db.JobApplications.Add(new JobApplication
             {
                 Id = appId,
+                    UserId = _userId,
                 CompanyName = "DeleteCo",
                 JobRole = "Dev",
                 AppliedDate = "20-05-2026",
@@ -624,6 +700,7 @@ public class ApplicationsControllerTests : IClassFixture<CustomWebApplicationFac
             db.JobApplications.Add(new JobApplication
             {
                 Id = appId,
+                    UserId = _userId,
                 CompanyName = "AlreadyDeletedCo",
                 JobRole = "Dev",
                 AppliedDate = "20-05-2026",
@@ -651,6 +728,7 @@ public class ApplicationsControllerTests : IClassFixture<CustomWebApplicationFac
             db.JobApplications.Add(new JobApplication
             {
                 Id = appId,
+                    UserId = _userId,
                 CompanyName = "CachedDeleteCo",
                 JobRole = "Dev",
                 AppliedDate = "20-05-2026",
@@ -694,6 +772,7 @@ public class ApplicationsControllerTests : IClassFixture<CustomWebApplicationFac
                 db.JobApplications.Add(new JobApplication
                 {
                     Id = id,
+                    UserId = _userId,
                     CompanyName = $"{testKey}-Company-{i:00}",
                     JobRole = "Dev",
                     AppliedDate = "20-05-2026",
@@ -721,18 +800,10 @@ public class ApplicationsControllerTests : IClassFixture<CustomWebApplicationFac
     private async Task<Guid> SeedConnectionAsync(string email = "test@gmail.com")
     {
         using var db = _factory.CreateDbContext();
-        var user = new User
-        {
-            Id = Guid.NewGuid(),
-            FirstName = "Test",
-            LastName = "User"
-        };
-        db.Users.Add(user);
-
         var connection = new EmailConnection
         {
             Id = Guid.NewGuid(),
-            UserId = user.Id,
+            UserId = _userId,
             Email = email,
             SubjectId = $"sub-{Guid.NewGuid()}",
             RefreshToken = "test-refresh-token",
