@@ -1,4 +1,4 @@
-namespace web_api.Authentication;
+namespace web_api.Interfaces;
 
 public interface IOneTimeCodeStore
 {

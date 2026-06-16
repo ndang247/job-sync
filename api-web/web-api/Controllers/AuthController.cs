@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Options;
 using web_api.Authentication;
+using web_api.Interfaces;
 using web_api.Options;
 
 namespace web_api.Controllers;

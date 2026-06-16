@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.EntityFrameworkCore;
 using web_api.Authentication;
+using web_api.Interfaces;
 
 namespace web_api.Controllers;
 

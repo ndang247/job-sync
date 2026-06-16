@@ -1,7 +1,7 @@
 using api_contracts.Responses;
 using core.Entities;
 
-namespace web_api.Authentication;
+namespace web_api.Interfaces;
 
 public interface IAuthTokenService
 {

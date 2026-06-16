@@ -116,7 +116,7 @@ public class ApplicationsControllerTests : IClassFixture<CustomWebApplicationFac
             db.JobApplications.Add(new JobApplication
             {
                 Id = appId,
-                    UserId = _userId,
+                UserId = _userId,
                 CompanyName = "TestCo",
                 JobRole = "Fullstack Dev",
                 AppliedDate = "20-05-2026",
@@ -153,7 +153,7 @@ public class ApplicationsControllerTests : IClassFixture<CustomWebApplicationFac
             db.JobApplications.Add(new JobApplication
             {
                 Id = olderId,
-                    UserId = _userId,
+                UserId = _userId,
                 CompanyName = olderName,
                 JobRole = "Dev",
                 AppliedDate = "10-05-2026",
@@ -164,7 +164,7 @@ public class ApplicationsControllerTests : IClassFixture<CustomWebApplicationFac
             db.JobApplications.Add(new JobApplication
             {
                 Id = newerId,
-                    UserId = _userId,
+                UserId = _userId,
                 CompanyName = newerName,
                 JobRole = "Dev",
                 AppliedDate = "20-05-2026",
@@ -206,7 +206,7 @@ public class ApplicationsControllerTests : IClassFixture<CustomWebApplicationFac
             db.JobApplications.Add(new JobApplication
             {
                 Id = Guid.NewGuid(),
-                    UserId = _userId,
+                UserId = _userId,
                 CompanyName = "DeletedCo",
                 JobRole = "Dev",
                 AppliedDate = "10-05-2026",
@@ -218,7 +218,7 @@ public class ApplicationsControllerTests : IClassFixture<CustomWebApplicationFac
             db.JobApplications.Add(new JobApplication
             {
                 Id = Guid.NewGuid(),
-                    UserId = _userId,
+                UserId = _userId,
                 CompanyName = "ActiveCo",
                 JobRole = "Dev",
                 AppliedDate = "20-05-2026",
@@ -249,7 +249,7 @@ public class ApplicationsControllerTests : IClassFixture<CustomWebApplicationFac
             db.JobApplications.Add(new JobApplication
             {
                 Id = Guid.NewGuid(),
-                    UserId = _userId,
+                UserId = _userId,
                 CompanyName = "EmailCo",
                 JobRole = "Dev",
                 AppliedDate = "20-05-2026",
@@ -386,7 +386,7 @@ public class ApplicationsControllerTests : IClassFixture<CustomWebApplicationFac
             db.JobApplications.Add(new JobApplication
             {
                 Id = appId,
-                    UserId = _userId,
+                UserId = _userId,
                 CompanyName = "DetailCo",
                 JobRole = "Platform Engineer",
                 AppliedDate = "21-05-2026",
@@ -472,7 +472,7 @@ public class ApplicationsControllerTests : IClassFixture<CustomWebApplicationFac
             db.JobApplications.Add(new JobApplication
             {
                 Id = appId,
-                    UserId = _userId,
+                UserId = _userId,
                 CompanyName = "DeletedDetailCo",
                 JobRole = "Dev",
                 AppliedDate = "21-05-2026",
@@ -500,7 +500,7 @@ public class ApplicationsControllerTests : IClassFixture<CustomWebApplicationFac
             db.JobApplications.Add(new JobApplication
             {
                 Id = appId,
-                    UserId = _userId,
+                UserId = _userId,
                 CompanyName = "BeforeCo",
                 JobRole = "Before Role",
                 AppliedDate = "20-05-2026",
@@ -572,7 +572,7 @@ public class ApplicationsControllerTests : IClassFixture<CustomWebApplicationFac
             db.JobApplications.Add(new JobApplication
             {
                 Id = appId,
-                    UserId = _userId,
+                UserId = _userId,
                 CompanyName = "BeforeCo",
                 JobRole = "Before Role",
                 AppliedDate = "20-05-2026",
@@ -605,7 +605,7 @@ public class ApplicationsControllerTests : IClassFixture<CustomWebApplicationFac
             db.JobApplications.Add(new JobApplication
             {
                 Id = appId,
-                    UserId = _userId,
+                UserId = _userId,
                 CompanyName = "CachedBeforeCo",
                 JobRole = "Dev",
                 AppliedDate = "20-05-2026",
@@ -649,7 +649,7 @@ public class ApplicationsControllerTests : IClassFixture<CustomWebApplicationFac
             db.JobApplications.Add(new JobApplication
             {
                 Id = appId,
-                    UserId = _userId,
+                UserId = _userId,
                 CompanyName = "DeleteCo",
                 JobRole = "Dev",
                 AppliedDate = "20-05-2026",
@@ -700,7 +700,7 @@ public class ApplicationsControllerTests : IClassFixture<CustomWebApplicationFac
             db.JobApplications.Add(new JobApplication
             {
                 Id = appId,
-                    UserId = _userId,
+                UserId = _userId,
                 CompanyName = "AlreadyDeletedCo",
                 JobRole = "Dev",
                 AppliedDate = "20-05-2026",
@@ -728,7 +728,7 @@ public class ApplicationsControllerTests : IClassFixture<CustomWebApplicationFac
             db.JobApplications.Add(new JobApplication
             {
                 Id = appId,
-                    UserId = _userId,
+                UserId = _userId,
                 CompanyName = "CachedDeleteCo",
                 JobRole = "Dev",
                 AppliedDate = "20-05-2026",

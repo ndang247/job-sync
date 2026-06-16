@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Caching.Memory;
 using web_api.Authentication;
+using web_api.Interfaces;
 using web_api.Options;
 
 namespace web_api.IntegrationTests.Authentication;

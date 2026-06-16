@@ -16,6 +16,7 @@ using System.Text;
 using System.Threading.RateLimiting;
 using web_api.Authentication;
 using web_api.Options;
+using web_api.Interfaces;
 
 var builder = WebApplication.CreateBuilder(args);
 
