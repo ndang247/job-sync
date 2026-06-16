@@ -11,11 +11,15 @@ import { ApplicationsService } from '../../../services/applications';
 export class Hero {
   protected readonly service = inject(ApplicationsService);
 
-  onAddAccount(): void {
-    this.service.addGoogleAccount();
+  async onAddAccount(): Promise<void> {
+    await this.service.addGoogleAccount();
   }
 
   onSync(): void {
     this.service.openSyncModal();
+  }
+
+  onLogout(): void {
+    this.service.logout();
   }
 }

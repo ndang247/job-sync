@@ -24,6 +24,7 @@ public sealed class AuthController(
     IOptions<OtpOptions> otpOptions,
     ILogger<AuthController> logger) : ControllerBase
 {
+    private const string RefreshTokenCookieName = "job_sync_refresh";
     private const string Purpose = "email-login";
     private const string GenericMessage =
         "If the address can receive email, a verification code has been sent.";
@@ -136,33 +137,98 @@ public sealed class AuthController(
             }
         }
 
-        return Ok(await tokenService.IssueAsync(user, cancellationToken));
+        var tokens = await tokenService.IssueAsync(user, cancellationToken);
+        SetRefreshTokenCookie(tokens.RefreshToken, tokens.RefreshTokenExpiresAt);
+        return Ok(ToClientResponse(tokens));
     }
 
     [HttpPost("token/refresh")]
     public async Task<IActionResult> Refresh(
-        RefreshTokenRequest request,
         CancellationToken cancellationToken)
     {
-        var tokens = await tokenService.RefreshAsync(request.RefreshToken, cancellationToken);
-        return tokens is null
-            ? Unauthorized(new
+        if (!Request.Cookies.TryGetValue(RefreshTokenCookieName, out var refreshToken) ||
+            string.IsNullOrWhiteSpace(refreshToken))
+        {
+            return Unauthorized(new
             {
                 code = "REFRESH_TOKEN_INVALID",
                 error = "The refresh token is invalid or expired."
-            })
-            : Ok(tokens);
+            });
+        }
+
+        var tokens = await tokenService.RefreshAsync(refreshToken, cancellationToken);
+        if (tokens is null)
+        {
+            ClearRefreshTokenCookie();
+            return Unauthorized(new
+            {
+                code = "REFRESH_TOKEN_INVALID",
+                error = "The refresh token is invalid or expired."
+            });
+        }
+
+        SetRefreshTokenCookie(tokens.RefreshToken, tokens.RefreshTokenExpiresAt);
+        return Ok(ToClientResponse(tokens));
     }
 
     [HttpPost("logout")]
     public async Task<IActionResult> Logout(
-        RefreshTokenRequest request,
         CancellationToken cancellationToken)
     {
-        await tokenService.RevokeFamilyAsync(request.RefreshToken, cancellationToken);
+        if (Request.Cookies.TryGetValue(RefreshTokenCookieName, out var refreshToken) &&
+            !string.IsNullOrWhiteSpace(refreshToken))
+        {
+            await tokenService.RevokeFamilyAsync(refreshToken, cancellationToken);
+        }
+
+        ClearRefreshTokenCookie();
         return NoContent();
     }
 
     private static string NormalizeEmail(string email) =>
         email.Trim().ToLowerInvariant();
+
+    private void SetRefreshTokenCookie(
+        string refreshToken,
+        DateTimeOffset expiresAt)
+    {
+        Response.Cookies.Append(
+            RefreshTokenCookieName,
+            refreshToken,
+            new CookieOptions
+            {
+                HttpOnly = true,
+                Secure = ShouldUseSecureCookie(),
+                SameSite = SameSiteMode.Lax,
+                Expires = expiresAt,
+                Path = "/api/v1/auth"
+            });
+    }
+
+    private void ClearRefreshTokenCookie()
+    {
+        Response.Cookies.Delete(
+            RefreshTokenCookieName,
+            new CookieOptions
+            {
+                HttpOnly = true,
+                Secure = ShouldUseSecureCookie(),
+                SameSite = SameSiteMode.Lax,
+                Path = "/api/v1/auth"
+            });
+    }
+
+    private static object ToClientResponse(TokenResponse tokens) => new
+    {
+        tokens.TokenType,
+        tokens.AccessToken,
+        tokens.ExpiresInSeconds,
+        tokens.RefreshTokenExpiresAt
+    };
+
+    private bool ShouldUseSecureCookie()
+    {
+        var environment = HttpContext.RequestServices.GetRequiredService<IHostEnvironment>();
+        return !environment.IsDevelopment() && !environment.IsEnvironment("Testing");
+    }
 }

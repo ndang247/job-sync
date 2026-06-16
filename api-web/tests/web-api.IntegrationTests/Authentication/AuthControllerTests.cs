@@ -76,7 +76,8 @@ public sealed class AuthControllerTests : IClassFixture<CustomWebApplicationFact
         Assert.Equal("Bearer", content.GetProperty("tokenType").GetString());
         Assert.False(string.IsNullOrWhiteSpace(content.GetProperty("accessToken").GetString()));
         var accessToken = content.GetProperty("accessToken").GetString()!;
-        var refreshToken = content.GetProperty("refreshToken").GetString()!;
+        Assert.False(content.TryGetProperty("refreshToken", out _));
+        var refreshToken = ReadRefreshCookie(response);
         Assert.False(string.IsNullOrWhiteSpace(refreshToken));
         Assert.Equal(900, content.GetProperty("expiresInSeconds").GetInt32());
 
@@ -118,18 +119,21 @@ public sealed class AuthControllerTests : IClassFixture<CustomWebApplicationFact
     {
         var tokens = await AuthenticateAsync();
 
-        var firstRefresh = await _client.PostAsJsonAsync("/api/v1/auth/token/refresh",
-            new { refreshToken = tokens.RefreshToken });
+        var firstRefresh = await PostWithRefreshCookieAsync(
+            "/api/v1/auth/token/refresh",
+            tokens.RefreshToken);
         Assert.Equal(HttpStatusCode.OK, firstRefresh.StatusCode);
         var rotated = await ReadTokensAsync(firstRefresh);
         Assert.NotEqual(tokens.RefreshToken, rotated.RefreshToken);
 
-        var replay = await _client.PostAsJsonAsync("/api/v1/auth/token/refresh",
-            new { refreshToken = tokens.RefreshToken });
+        var replay = await PostWithRefreshCookieAsync(
+            "/api/v1/auth/token/refresh",
+            tokens.RefreshToken);
         Assert.Equal(HttpStatusCode.Unauthorized, replay.StatusCode);
 
-        var familyRevoked = await _client.PostAsJsonAsync("/api/v1/auth/token/refresh",
-            new { refreshToken = rotated.RefreshToken });
+        var familyRevoked = await PostWithRefreshCookieAsync(
+            "/api/v1/auth/token/refresh",
+            rotated.RefreshToken);
         Assert.Equal(HttpStatusCode.Unauthorized, familyRevoked.StatusCode);
     }
 
@@ -138,16 +142,19 @@ public sealed class AuthControllerTests : IClassFixture<CustomWebApplicationFact
     {
         var tokens = await AuthenticateAsync();
 
-        var logout = await _client.PostAsJsonAsync("/api/v1/auth/logout",
-            new { refreshToken = tokens.RefreshToken });
-        var repeatedLogout = await _client.PostAsJsonAsync("/api/v1/auth/logout",
-            new { refreshToken = tokens.RefreshToken });
+        var logout = await PostWithRefreshCookieAsync("/api/v1/auth/logout", tokens.RefreshToken);
+        var repeatedLogout = await PostWithRefreshCookieAsync(
+            "/api/v1/auth/logout",
+            tokens.RefreshToken);
 
         Assert.Equal(HttpStatusCode.NoContent, logout.StatusCode);
         Assert.Equal(HttpStatusCode.NoContent, repeatedLogout.StatusCode);
+        Assert.Contains(logout.Headers.GetValues("Set-Cookie"),
+            value => value.StartsWith("job_sync_refresh=;", StringComparison.Ordinal));
 
-        var refresh = await _client.PostAsJsonAsync("/api/v1/auth/token/refresh",
-            new { refreshToken = tokens.RefreshToken });
+        var refresh = await PostWithRefreshCookieAsync(
+            "/api/v1/auth/token/refresh",
+            tokens.RefreshToken);
         Assert.Equal(HttpStatusCode.Unauthorized, refresh.StatusCode);
     }
 
@@ -168,12 +175,32 @@ public sealed class AuthControllerTests : IClassFixture<CustomWebApplicationFact
         return await ReadTokensAsync(response);
     }
 
+    private async Task<HttpResponseMessage> PostWithRefreshCookieAsync(
+        string path,
+        string refreshToken)
+    {
+        using var client = _factory.CreateClient();
+        using var request = new HttpRequestMessage(HttpMethod.Post, path);
+        request.Headers.Add("Cookie", $"job_sync_refresh={refreshToken}");
+        request.Content = JsonContent.Create(new { });
+        return await client.SendAsync(request);
+    }
+
     private static async Task<TokenPair> ReadTokensAsync(HttpResponseMessage response)
     {
         var content = await response.Content.ReadFromJsonAsync<JsonElement>();
         return new TokenPair(
             content.GetProperty("accessToken").GetString()!,
-            content.GetProperty("refreshToken").GetString()!);
+            ReadRefreshCookie(response));
+    }
+
+    private static string ReadRefreshCookie(HttpResponseMessage response)
+    {
+        Assert.True(response.Headers.TryGetValues("Set-Cookie", out var setCookieHeaders));
+        var refreshCookie = setCookieHeaders.Single(header =>
+            header.StartsWith("job_sync_refresh=", StringComparison.Ordinal));
+        var cookieValue = refreshCookie.Split(';', 2)[0];
+        return cookieValue["job_sync_refresh=".Length..];
     }
 
     private static string UniqueEmail() => $"auth-{Guid.NewGuid():N}@example.com";

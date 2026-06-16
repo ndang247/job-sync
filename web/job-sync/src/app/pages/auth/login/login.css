@@ -1,0 +1,156 @@
+:host {
+  display: block;
+  margin: calc(clamp(var(--spacing-sm), 2vw, var(--spacing-md)) * -1);
+}
+
+.app-shell {
+  min-height: 100vh;
+  width: 100%;
+  background:
+    radial-gradient(circle at top right, color-mix(in oklab, var(--accent) 8%, transparent), transparent 32%),
+    var(--bg);
+}
+
+.content {
+  min-height: 100vh;
+  width: min(100%, 560px);
+  margin: 0 auto;
+  padding: clamp(28px, 6vw, 72px) clamp(20px, 5vw, 40px);
+  display: grid;
+  align-content: center;
+}
+
+.panel,
+.panel-head,
+.form,
+.field-group {
+  display: grid;
+}
+
+.panel {
+  gap: 20px;
+}
+
+.panel-head {
+  gap: 8px;
+}
+
+.brand-mark,
+.field-label {
+  color: var(--muted);
+  font: 600 11px/1.2 var(--font-mono);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.brand-mark,
+.panel-copy,
+.field-help,
+.error-text {
+  margin: 0;
+}
+
+h1 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(2.2rem, 5vw, 3.1rem);
+  font-weight: 400;
+  line-height: 0.96;
+  letter-spacing: -0.03em;
+  text-wrap: pretty;
+}
+
+.panel-copy,
+.field-help {
+  color: var(--muted);
+  line-height: 1.7;
+}
+
+.form {
+  gap: 18px;
+}
+
+.field-group {
+  gap: 10px;
+}
+
+.text-input {
+  min-height: 56px;
+  width: 100%;
+  padding: 0 16px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--fg);
+  border-radius: 0;
+}
+
+.text-input::placeholder {
+  color: color-mix(in oklab, var(--muted) 80%, white);
+}
+
+.text-input:focus-visible,
+.button:focus-visible {
+  outline: 2px solid color-mix(in oklab, var(--accent) 55%, white);
+  outline-offset: 3px;
+}
+
+.field-help,
+.error-text {
+  font-size: 0.95rem;
+  line-height: 1.6;
+}
+
+.error-text {
+  color: var(--accent);
+}
+
+.button-row {
+  display: flex;
+  justify-content: stretch;
+  gap: 12px;
+  padding-top: 4px;
+}
+
+.button {
+  min-height: 46px;
+  min-width: 180px;
+  padding: 0 20px;
+  border: 1px solid var(--fg);
+  background: transparent;
+  color: var(--fg);
+  transition: transform 180ms ease, background-color 180ms ease, color 180ms ease, border-color 180ms ease;
+}
+
+.button:hover:not(:disabled),
+.button:focus-visible:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.button-primary {
+  background: var(--fg);
+  color: var(--surface);
+}
+
+.button-primary:hover:not(:disabled),
+.button-primary:focus-visible:not(:disabled) {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--surface);
+}
+
+@media (max-width: 540px) {
+  .content {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  .button {
+    width: 100%;
+    min-width: 0;
+  }
+}
