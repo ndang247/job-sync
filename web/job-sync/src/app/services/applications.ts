@@ -3,6 +3,8 @@ import { DOCUMENT } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
 import * as signalR from '@microsoft/signalr';
 import { firstValueFrom, map, Observable, tap } from 'rxjs';
+import { API_BASE_URL } from './api-config';
+import { AuthService } from './auth/auth';
 import { StorageService } from './storage/storage';
 
 export type JobApplicationStatus =
@@ -69,7 +71,6 @@ export interface SyncState {
 
 const PAGE_SIZE = 10;
 
-const API_BASE_URL = 'http://localhost:5084';
 const LAST_SYNC_KEY = 'lastSyncTimestamp';
 const STATUS_LABELS: Record<JobApplicationStatusKey, JobApplicationStatus> = {
   applied: 'Applied',
@@ -85,6 +86,7 @@ const STATUS_LABELS: Record<JobApplicationStatusKey, JobApplicationStatus> = {
 export class ApplicationsService {
   private readonly document = inject(DOCUMENT);
   private readonly http = inject(HttpClient);
+  private readonly auth = inject(AuthService);
   private readonly storage = inject(StorageService);
 
   readonly applications = signal<JobApplication[]>([]);
@@ -217,11 +219,21 @@ export class ApplicationsService {
     });
   }
 
-  addGoogleAccount(): void {
+  async addGoogleAccount(): Promise<void> {
     const window = this.document.defaultView;
-    if (window) {
-      window.location.href = `${API_BASE_URL}/api/v1/mail-connect/gmail/start`;
-    }
+    if (!window) return;
+
+    const response = await firstValueFrom(
+      this.http.post<{ authorizationUrl: string }>(
+        `${API_BASE_URL}/api/v1/mail-connect/gmail/start`,
+        {},
+      ),
+    );
+    window.location.href = response.authorizationUrl;
+  }
+
+  logout(): void {
+    this.auth.logoutAndRedirect();
   }
 
   openSyncModal(): void {
@@ -300,7 +312,9 @@ export class ApplicationsService {
 
     try {
       const connection = new signalR.HubConnectionBuilder()
-        .withUrl(`${API_BASE_URL}/hubs/sync`)
+        .withUrl(`${API_BASE_URL}/hubs/sync`, {
+          accessTokenFactory: () => this.auth.getAccessTokenForRealtime(),
+        })
         .withAutomaticReconnect()
         .build();
 

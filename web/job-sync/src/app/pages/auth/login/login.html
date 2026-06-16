@@ -1,0 +1,50 @@
+<main class="app-shell">
+  <section class="content">
+    <section class="panel" aria-labelledby="login-title">
+      <div class="panel-head">
+        <p class="brand-mark">Application tracker</p>
+        <h1 id="login-title">Sign in with a one-time code</h1>
+      </div>
+      <p class="panel-copy">
+        Enter the email address linked to your account. We will send a one-time code on the next
+        step.
+      </p>
+
+      <form class="form" (keydown.enter)="submit($event)" novalidate>
+        <div class="field-group">
+          <label class="field-label" for="emailInput">Email</label>
+          <input
+            class="text-input"
+            id="emailInput"
+            type="email"
+            inputmode="email"
+            autocomplete="username"
+            placeholder="Continue with email"
+            aria-describedby="emailHelp emailError submitError"
+            [attr.aria-invalid]="showError()"
+            [formControl]="email"
+          />
+          @if (showError()) {
+            <p class="error-text visible" id="emailError" role="alert">
+              Enter a valid email address to continue.
+            </p>
+          }
+          @if (errorMessage()) {
+            <p class="error-text visible" id="submitError" role="alert">{{ errorMessage() }}</p>
+          }
+        </div>
+
+        <div class="button-row">
+          <button
+            class="button button-primary"
+            type="button"
+            [disabled]="email.invalid || submitting()"
+            (click)="submit($event)"
+          >
+            {{ submitting() ? 'Sending code...' : 'Continue' }}
+          </button>
+        </div>
+      </form>
+    </section>
+  </section>
+</main>
