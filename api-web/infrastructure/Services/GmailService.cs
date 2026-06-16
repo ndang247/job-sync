@@ -29,7 +29,11 @@ public partial class GmailService : IEmailService
         _logger = logger;
     }
 
-    public async Task<List<EmailMessage>> FetchEmailsAsync(Guid emailConnectionId, CancellationToken cancellationToken = default)
+    public async Task<List<EmailMessage>> FetchEmailsAsync(
+        Guid emailConnectionId,
+        DateTime syncStartUtc,
+        DateTime syncEndUtcExclusive,
+        CancellationToken cancellationToken = default)
     {
         var connection = await _dbContext.EmailConnections.FirstOrDefaultAsync(
             ec => ec.Id == emailConnectionId, cancellationToken)
@@ -43,9 +47,8 @@ public partial class GmailService : IEmailService
             ApplicationName = "Job-Sync"
         });
 
-        var after = DateTimeOffset.UtcNow.AddDays(-1).ToUnixTimeSeconds();
         var request = gmailService.Users.Messages.List("me");
-        request.Q = $"after:{after}";
+        request.Q = BuildDateRangeQuery(syncStartUtc, syncEndUtcExclusive);
         request.MaxResults = 500;
 
         var emails = new List<EmailMessage>();
@@ -69,6 +72,21 @@ public partial class GmailService : IEmailService
         } while (pageToken != null);
 
         return emails;
+    }
+
+    public static string BuildDateRangeQuery(DateTime syncStartUtc, DateTime syncEndUtcExclusive)
+    {
+        var start = ToUnixTimeSeconds(syncStartUtc);
+        var end = ToUnixTimeSeconds(syncEndUtcExclusive);
+        return string.Create(CultureInfo.InvariantCulture, $"after:{start} before:{end}");
+    }
+
+    private static long ToUnixTimeSeconds(DateTime value)
+    {
+        var utc = value.Kind == DateTimeKind.Utc
+            ? value
+            : DateTime.SpecifyKind(value, DateTimeKind.Utc);
+        return new DateTimeOffset(utc).ToUnixTimeSeconds();
     }
 
     private async Task<UserCredential> GetCredentialAsync(EmailConnection connection, CancellationToken cancellationToken)

@@ -76,7 +76,13 @@ public class SyncBackgroundService : BackgroundService
             job.Status = SyncJobStatus.Processing;
             await dbContext.SaveChangesAsync(cancellationToken);
 
-            var results = await orchestrator.ExecuteSyncAsync(job.Id, job.EmailConnectionId, progressReporter, cancellationToken);
+            var results = await orchestrator.ExecuteSyncAsync(
+                job.Id,
+                job.EmailConnectionId,
+                job.SyncStartUtc,
+                job.SyncEndUtcExclusive,
+                progressReporter,
+                cancellationToken);
 
             // Note: ExecuteSyncAsync persists entities via JobApplicationService, which sets EmailConnectionId
             // and may cause EF to fixup navigation properties. The serialized Result may include related entities

@@ -9,6 +9,9 @@ public class SyncJob : BaseEntity
     public User User { get; set; } = null!;
     public Guid EmailConnectionId { get; set; }
     public EmailConnection EmailConnection { get; set; } = null!;
+    public DateTime SyncStartUtc { get; set; }
+    public DateTime SyncEndUtcExclusive { get; set; }
+    public string? SyncTimeZone { get; set; }
     public SyncJobStatus Status { get; set; } = SyncJobStatus.Pending;
     public int Progress { get; set; }
     public string? Stage { get; set; }

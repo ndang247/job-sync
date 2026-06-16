@@ -61,6 +61,152 @@ public class SyncControllerTests : IClassFixture<CustomWebApplicationFactory>
         Assert.Equal(userId, job.UserId);
         Assert.Equal(connId, job.EmailConnectionId);
         Assert.Equal(SyncJobStatus.Pending, job.Status);
+        Assert.True(job.SyncStartUtc < job.SyncEndUtcExclusive);
+        Assert.Equal(TimeZoneInfo.Local.Id, job.SyncTimeZone);
+    }
+
+    [Fact]
+    public async Task StartSync_MissingDateRange_DefaultsToToday()
+    {
+        var (_, connId) = await SeedUserWithConnectionAsync();
+
+        var response = await _client.PostAsJsonAsync("/api/v1/sync", new { emailConnectionId = connId });
+        var content = await response.Content.ReadFromJsonAsync<JsonElement>();
+        var jobId = Guid.Parse(content.GetProperty("jobId").GetString()!);
+
+        using var db = _factory.CreateDbContext();
+        var job = await db.SyncJobs.FindAsync(jobId);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.NotNull(job);
+
+        var localStartDate = DateOnly.FromDateTime(
+            TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(job.SyncStartUtc, DateTimeKind.Utc), TimeZoneInfo.Local));
+        var localEndDate = DateOnly.FromDateTime(
+            TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(job.SyncEndUtcExclusive, DateTimeKind.Utc), TimeZoneInfo.Local).AddTicks(-1));
+
+        Assert.Equal(DateOnly.FromDateTime(DateTime.Today), localStartDate);
+        Assert.Equal(DateOnly.FromDateTime(DateTime.Today), localEndDate);
+        Assert.Equal(TimeZoneInfo.Local.Id, job.SyncTimeZone);
+    }
+
+    [Fact]
+    public async Task StartSync_SingleDateRange_PersistsWholeDayUtcWindow()
+    {
+        var (_, connId) = await SeedUserWithConnectionAsync();
+
+        var response = await _client.PostAsJsonAsync("/api/v1/sync", new
+        {
+            emailConnectionId = connId,
+            dateRange = new
+            {
+                startDate = "2026-06-16",
+                timeZone = "Australia/Sydney"
+            }
+        });
+        var content = await response.Content.ReadFromJsonAsync<JsonElement>();
+        var jobId = Guid.Parse(content.GetProperty("jobId").GetString()!);
+
+        using var db = _factory.CreateDbContext();
+        var job = await db.SyncJobs.FindAsync(jobId);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.NotNull(job);
+        Assert.Equal(new DateTime(2026, 6, 15, 14, 0, 0, DateTimeKind.Utc), job.SyncStartUtc);
+        Assert.Equal(new DateTime(2026, 6, 16, 14, 0, 0, DateTimeKind.Utc), job.SyncEndUtcExclusive);
+        Assert.Equal("Australia/Sydney", job.SyncTimeZone);
+    }
+
+    [Fact]
+    public async Task StartSync_DateRange_PersistsInclusiveEndDateUtcWindow()
+    {
+        var (_, connId) = await SeedUserWithConnectionAsync();
+
+        var response = await _client.PostAsJsonAsync("/api/v1/sync", new
+        {
+            emailConnectionId = connId,
+            dateRange = new
+            {
+                startDate = "2026-06-10",
+                endDate = "2026-06-16",
+                timeZone = "Australia/Sydney"
+            }
+        });
+        var content = await response.Content.ReadFromJsonAsync<JsonElement>();
+        var jobId = Guid.Parse(content.GetProperty("jobId").GetString()!);
+
+        using var db = _factory.CreateDbContext();
+        var job = await db.SyncJobs.FindAsync(jobId);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.NotNull(job);
+        Assert.Equal(new DateTime(2026, 6, 9, 14, 0, 0, DateTimeKind.Utc), job.SyncStartUtc);
+        Assert.Equal(new DateTime(2026, 6, 16, 14, 0, 0, DateTimeKind.Utc), job.SyncEndUtcExclusive);
+        Assert.Equal("Australia/Sydney", job.SyncTimeZone);
+    }
+
+    [Fact]
+    public async Task StartSync_EndDateBeforeStartDate_ReturnsBadRequest()
+    {
+        var (_, connId) = await SeedUserWithConnectionAsync();
+
+        var response = await _client.PostAsJsonAsync("/api/v1/sync", new
+        {
+            emailConnectionId = connId,
+            dateRange = new
+            {
+                startDate = "2026-06-16",
+                endDate = "2026-06-10",
+                timeZone = "Australia/Sydney"
+            }
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+
+        var content = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("INVALID_SYNC_DATE_RANGE", content.GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task StartSync_InvalidStartDate_ReturnsBadRequest()
+    {
+        var (_, connId) = await SeedUserWithConnectionAsync();
+
+        var response = await _client.PostAsJsonAsync("/api/v1/sync", new
+        {
+            emailConnectionId = connId,
+            dateRange = new
+            {
+                startDate = "16-06-2026",
+                timeZone = "Australia/Sydney"
+            }
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+
+        var content = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("INVALID_SYNC_DATE_RANGE", content.GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task StartSync_InvalidTimeZone_ReturnsBadRequest()
+    {
+        var (_, connId) = await SeedUserWithConnectionAsync();
+
+        var response = await _client.PostAsJsonAsync("/api/v1/sync", new
+        {
+            emailConnectionId = connId,
+            dateRange = new
+            {
+                startDate = "2026-06-16",
+                timeZone = "Mars/Olympus"
+            }
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+
+        var content = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("INVALID_SYNC_DATE_RANGE", content.GetProperty("code").GetString());
     }
 
     [Fact]

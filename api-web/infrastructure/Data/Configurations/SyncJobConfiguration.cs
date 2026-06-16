@@ -16,6 +16,13 @@ public class SyncJobConfiguration : IEntityTypeConfiguration<SyncJob>
             .HasMaxLength(20)
             .IsRequired();
         builder.Property(s => s.Stage).HasMaxLength(100);
+        builder.Property(s => s.SyncStartUtc)
+            .HasColumnType("timestamp with time zone")
+            .IsRequired();
+        builder.Property(s => s.SyncEndUtcExclusive)
+            .HasColumnType("timestamp with time zone")
+            .IsRequired();
+        builder.Property(s => s.SyncTimeZone).HasMaxLength(100);
         // ValueConverter for JsonDocument needed for InMemory provider (test). 
         // Npgsql handle natively, but InMemory no handle JsonDocument. This fix test break.
         // For InMemory, we store the JSON as a string and parse it back to JsonDocument when reading.

@@ -17,11 +17,21 @@ public class SyncOrchestrator : ISyncOrchestrator
         _jobApplicationService = jobApplicationService;
     }
 
-    public async Task<List<JobApplication>> ExecuteSyncAsync(Guid jobId, Guid emailConnectionId, ISyncProgressReporter progressReporter, CancellationToken cancellationToken = default)
+    public async Task<List<JobApplication>> ExecuteSyncAsync(
+        Guid jobId,
+        Guid emailConnectionId,
+        DateTime syncStartUtc,
+        DateTime syncEndUtcExclusive,
+        ISyncProgressReporter progressReporter,
+        CancellationToken cancellationToken = default)
     {
         await progressReporter.ReportProgressAsync(jobId, "Fetching emails", 5, cancellationToken);
 
-        var emails = await _emailService.FetchEmailsAsync(emailConnectionId, cancellationToken);
+        var emails = await _emailService.FetchEmailsAsync(
+            emailConnectionId,
+            syncStartUtc,
+            syncEndUtcExclusive,
+            cancellationToken);
 
         if (emails.Count == 0)
             return new List<JobApplication>();

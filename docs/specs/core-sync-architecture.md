@@ -48,7 +48,7 @@ flowchart LR
 
 ### Sync API
 
-`SyncController` accepts an `emailConnectionId`, verifies that the connection exists and is active, and rejects a request when that connection already has a pending or processing job. A valid request creates a durable `SyncJob` record and places its ID on the in-memory channel.
+`SyncController` accepts an `emailConnectionId` plus an optional sync date range, verifies that the connection exists and is active, and rejects a request when that connection already has a pending or processing job. A valid request resolves the selected whole-day window, stores it on a durable `SyncJob` record, and places the job ID on the in-memory channel.
 
 The status endpoint returns the job's current status, progress percentage, stage, result, and error. It also provides a fallback for clients that cannot receive SignalR events.
 
@@ -63,7 +63,7 @@ The status endpoint returns the job's current status, progress percentage, stage
 `SyncOrchestrator` owns the sync workflow:
 
 1. Report that email fetching has started.
-2. Retrieve Gmail messages from the previous 24 hours.
+2. Retrieve Gmail messages from the sync job's selected date window, defaulting to today.
 3. Split messages into batches of 20.
 4. Ask OpenAI to identify initial job application confirmations and extract structured fields.
 5. Run a final AI deduplication pass across all batch results.
@@ -74,7 +74,7 @@ The status endpoint returns the job's current status, progress percentage, stage
 
 The Gmail connection uses the `gmail.readonly` OAuth scope. Job Sync stores the refresh token and mints an access token when a sync runs rather than persisting access tokens.
 
-The current Gmail query uses `after:<unix timestamp>` for the previous 24 hours and requests up to 500 messages per page. Message headers and MIME content are converted into an internal email model before classification.
+The Gmail query uses `after:<unix timestamp> before:<unix timestamp>` for the sync job's persisted UTC window and requests up to 500 messages per page. Message headers and MIME content are converted into an internal email model before classification.
 
 ### AI Classification
 
@@ -95,7 +95,7 @@ PostgreSQL stores three records relevant to the pipeline:
 | Record | Purpose |
 | --- | --- |
 | `EmailConnection` | Gmail identity, refresh token, granted scopes, provider, and connection status |
-| `SyncJob` | Connection-scoped execution status, progress, stage, final JSON result, and error |
+| `SyncJob` | Connection-scoped execution status, selected UTC sync window, progress, stage, final JSON result, and error |
 | `JobApplication` | Normalized company, role, date, status, source message ID, and email connection |
 
 Applications are deduplicated during persistence by Gmail message ID within an email connection. The final list is also stored as a JSON snapshot on the completed sync job.
@@ -130,7 +130,7 @@ sequenceDiagram
     Worker-->>Hub: SyncProgress("Fetching emails", 5)
     Hub-->>Client: SyncProgress
 
-    Worker->>Gmail: Refresh access token and fetch messages from last 24 hours
+    Worker->>Gmail: Refresh access token and fetch messages from selected date window
     Gmail-->>Worker: Email messages
 
     loop Each batch of up to 20 messages

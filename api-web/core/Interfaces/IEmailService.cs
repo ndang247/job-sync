@@ -11,5 +11,9 @@ public class EmailMessage
 
 public interface IEmailService
 {
-    Task<List<EmailMessage>> FetchEmailsAsync(Guid emailConnectionId, CancellationToken cancellationToken = default);
+    Task<List<EmailMessage>> FetchEmailsAsync(
+        Guid emailConnectionId,
+        DateTime syncStartUtc,
+        DateTime syncEndUtcExclusive,
+        CancellationToken cancellationToken = default);
 }
