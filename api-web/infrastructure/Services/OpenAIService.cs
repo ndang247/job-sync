@@ -57,52 +57,135 @@ public class OpenAIService : IAIService
         var emailsText = string.Join("\n---\n", emails.Select(e =>
             $"MessageId: {e.Id}\nSubject: {e.Subject}\nFrom: {e.From}\nDate: {e.Date:dd-MM-yyyy}\nBody: {e.Body}"));
 
-        var prompt = $"""
-            You are classifying recruitment emails.
+        var prompt = $$"""
+            You are extracting job applications from recruitment-related emails.
 
-            Your task is to extract ONLY initial job application confirmation emails.
+            Goal:
 
-            IMPORTANT: First determine whether the email is a rejection, unsuccessful outcome, role closure, interview invite, job alert, recommendation, or later-stage status update. If yes, EXCLUDE it immediately, even if it also mentions an application, role, company, or says "thank you for your interest".
+            Return an application when the email provides strong evidence that the candidate applied for a specific job.
 
-            An email is an application confirmation ONLY if it confirms that the candidate has just submitted/applied for a job, such as:
-            - "Your application has been received"
-            - "Thank you for applying"
-            - "Application submitted successfully"
-            - "We received your application"
-            - "Thanks for your application"
+            Include an email if its primary purpose is to confirm, acknowledge, or reference an existing job application. Positive evidence includes:
 
-            EXCLUDE emails containing rejection or unsuccessful outcome language, including but not limited to:
-            - "After careful consideration"
-            - "we've decided not to move forward"
-            - "not move forward with your candidacy"
-            - "unfortunately"
-            - "we regret"
-            - "position has been filled"
-            - "role has been closed"
-            - "no longer available"
-            - "unsuccessful"
-            - "not selected"
+            * application submitted
+            * application sent
+            * application received
+            * application acknowledged
+            * application exists for a specific company and role
+            * recruiter or employer acknowledgement of an application
 
-            If an email contains both application-related words and rejection/outcome words, rejection/outcome words win and the email must be excluded.
+            Important:
 
-            Also exclude:
-            - interview invitations or scheduling
-            - job alerts or recommendations
-            - follow-ups or status updates
-            - role closing notifications
-            - emails where the company cannot be determined
+            Classify each email independently.
 
-            If the role cannot be determined but the company is identifiable, use "Unknown" as the jobRole.
-            For duplicates about the same application (e.g. platform confirmation + company auto-reply), return only one entry.
+            Do not exclude a valid application because the email also contains:
 
-            Return objects containing: messageId, companyName, jobRole, appliedDate (use the email date in dd-MM-yyyy format), status (always "applied").
-            If there are no initial application confirmation emails, return an empty applications array.
+            * recommended jobs
+            * next steps
+            * interview preparation information
+            * scheduling links
+            * marketing content appended to the email
+            * platform-generated suggestions
+
+            Exclude emails whose primary purpose is:
+
+            * job alerts or job recommendations
+            * newsletters, events, or marketing
+            * account, security, or platform notifications
+            * application view notifications
+            * application status updates that do not confirm a submitted application
+            * rejection or unsuccessful outcome notifications
+            * role closure notifications
+            * application withdrawal confirmations
+            * interview invitations or scheduling messages that do not otherwise confirm an application
+            * emails where the applied company cannot be determined
+
+            Priority rule:
+
+            If an email contains both application evidence and rejection, unsuccessful outcome, withdrawal, or role-closure language, exclude it.
+
+            Extraction rules:
+
+            * Use the email MessageId.
+            * Use the applied company, not the email platform, as companyName.
+            * Use the applied role/title when present.
+            * If the role cannot be determined but the company can be determined, use "Unknown".
+            * Use the email Date as appliedDate in dd-MM-yyyy format.
+            * If the email explicitly states an application date, use that date instead.
+            * Set status to "applied".
+
+            Duplicate handling:
+
+            Return one record per real-world job application, not one record per email.
+
+            Treat emails as duplicates when they refer to the same candidate applying to the same company for the same role, even if they have:
+
+            * different MessageIds
+            * different email dates
+            * different senders
+            * different templates
+            * different wording
+            * different recruitment platforms
+            * one direct employer email and one platform confirmation
+
+            Normalize company and role names before comparing:
+
+            * ignore casing
+            * ignore extra whitespace
+            * treat punctuation differences as the same
+            * treat "&" and "and" as the same
+            * treat minor title variations as the same when the role is clearly equivalent
+
+            Do not treat emails as duplicates solely because they share:
+
+            * sender
+            * template
+            * wording
+            * subject structure
+            * recruitment platform
+
+            When duplicates exist:
+
+            * keep the earliest appliedDate
+            * prefer the MessageId from the clearest original application confirmation
+            * discard later acknowledgements, reminders, status updates, or repeated confirmations
+
+            Validation:
+
+            Before returning the final result:
+
+            1. Identify all emails that satisfy the inclusion criteria.
+            2. Ensure every qualifying application appears exactly once in the output.
+            3. Ensure no excluded email appears in the output.
+
+            Output:
+
+            Return valid JSON only.
+
+            Schema:
+
+            {
+              "applications": [
+                {
+                  "messageId": "...",
+                  "companyName": "...",
+                  "jobRole": "...",
+                  "appliedDate": "dd-MM-yyyy",
+                  "status": "applied"
+                }
+              ]
+            }
+
+            If there are no matching applications, return:
+
+            {
+              "applications": []
+            }
 
             Emails:
-            
+
             ---
 
-            {emailsText}
+            {{emailsText}}
             """;
 
         var options = new ChatCompletionOptions { ResponseFormat = _jsonSchema };
@@ -128,9 +211,27 @@ public class OpenAIService : IAIService
         });
 
         var prompt = $"""
-            Given these job application results from multiple batches, deduplicate entries for the same messageId and companyName+jobRole combination.
-            Keep the earliest appliedDate for duplicates.
-            Return the final consolidated applications with: messageId, companyName, jobRole, appliedDate (in dd-MM-yyyy format), status.
+            Deduplicate these extracted job applications.
+
+            Return one record per real-world application, not one record per email.
+
+            Treat records as duplicates when they have the same candidate/email, same normalized companyName, and same normalized jobRole, even if messageId or appliedDate differ.
+
+            Normalize before comparing:
+            * case-insensitive company and role
+            * trim whitespace
+            * ignore punctuation differences
+            * treat "&" and "and" as equivalent
+            * treat minor role wording differences as equivalent when clearly the same job
+
+            Do not duplicate applications because they came from different emails, batches, platforms, or templates.
+
+            For each duplicate group:
+            * keep the earliest appliedDate
+            * keep the messageId from the record that best represents the original application confirmation
+            * keep status as "applied"
+
+            Return valid JSON only with: messageId, companyName, jobRole, appliedDate (in dd-MM-yyyy format), status.
 
             Applications:
             {applicationsJson}

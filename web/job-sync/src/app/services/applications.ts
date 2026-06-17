@@ -69,6 +69,12 @@ export interface SyncState {
   caption: string;
 }
 
+export interface SyncDateRange {
+  startDate: string;
+  endDate: string;
+  timeZone?: string;
+}
+
 const PAGE_SIZE = 10;
 
 const LAST_SYNC_KEY = 'lastSyncTimestamp';
@@ -296,7 +302,7 @@ export class ApplicationsService {
     }
   }
 
-  async runSync(accountId: string): Promise<void> {
+  async runSync(accountId: string, dateRange: SyncDateRange): Promise<void> {
     const account = this.accounts().find((a) => a.id === accountId) ?? this.accounts()[0];
     if (!account || this.syncState().syncing) return;
 
@@ -348,6 +354,7 @@ export class ApplicationsService {
       const { jobId } = await firstValueFrom(
         this.http.post<{ jobId: string }>(`${API_BASE_URL}/api/v1/sync`, {
           emailConnectionId: account.id,
+          dateRange,
         }),
       );
 

@@ -28,17 +28,58 @@
           }
         </select>
       </div>
-      <div class="modal-actions">
-        <button class="button" type="button" (click)="onCancel()">Cancel</button>
-        <button
-          class="button button-primary"
-          type="button"
-          [disabled]="service.accounts().length === 0"
-          (click)="onConfirm()"
-        >
-          Start sync
-        </button>
-      </div>
+      <form [formGroup]="form" (ngSubmit)="onConfirm()" novalidate>
+        <div class="date-grid">
+          <div class="field-group">
+            <label class="field-label" for="syncStartDate">Start date</label>
+            <input
+              class="text-input"
+              id="syncStartDate"
+              type="date"
+              formControlName="startDate"
+              required
+              aria-describedby="syncStartDateHelp syncStartDateError"
+              [attr.aria-invalid]="startDateInvalid()"
+              [class.input-invalid]="startDateInvalid()"
+            />
+            <span class="help-text" id="syncStartDateHelp">Format: yyyy-MM-dd</span>
+            @if (startDateError(); as message) {
+              <p class="field-error" id="syncStartDateError" aria-live="assertive">{{ message }}</p>
+            }
+          </div>
+          <div class="field-group">
+            <label class="field-label" for="syncEndDate">End date</label>
+            <input
+              class="text-input"
+              id="syncEndDate"
+              type="date"
+              formControlName="endDate"
+              required
+              aria-describedby="syncEndDateHelp syncEndDateError syncDateRangeError"
+              [attr.aria-invalid]="endDateInvalid()"
+              [class.input-invalid]="endDateInvalid()"
+            />
+            <span class="help-text" id="syncEndDateHelp">Format: yyyy-MM-dd</span>
+            @if (endDateError(); as message) {
+              <p class="field-error" id="syncEndDateError" aria-live="assertive">{{ message }}</p>
+            }
+          </div>
+        </div>
+        @if (dateRangeError(); as message) {
+          <p class="field-error" id="syncDateRangeError" aria-live="assertive">{{ message }}</p>
+        }
+        <div class="modal-actions">
+          <button class="button" type="button" (click)="onCancel()">Cancel</button>
+          <button
+            class="button button-primary"
+            id="startSyncButton"
+            type="submit"
+            [disabled]="service.accounts().length === 0 || form.invalid"
+          >
+            Start sync
+          </button>
+        </div>
+      </form>
     </div>
   </div>
 }
