@@ -14,7 +14,7 @@
 }
 
 .modal-card {
-  width: min(100%, 460px);
+  width: min(100%, 560px);
   background: var(--surface);
   border: 1px solid var(--border);
   padding: clamp(20px, 4vw, 28px);
@@ -50,6 +50,13 @@
   color: var(--muted);
 }
 
+.date-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--spacing-sm);
+}
+
+.text-input,
 .select-input {
   min-height: 48px;
   width: 100%;
@@ -60,9 +67,32 @@
   color: var(--fg);
 }
 
+.text-input:focus-visible,
 .select-input:focus-visible {
   outline: 2px solid color-mix(in oklab, var(--accent) 55%, white);
   outline-offset: 2px;
+}
+
+.input-invalid {
+  border-color: color-mix(in oklab, var(--accent) 68%, oklch(45% 0.17 28));
+}
+
+.help-text {
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.field-error {
+  margin: 0;
+  color: oklch(43% 0.17 28) !important;
+  font-size: 0.92rem;
+  line-height: 1.5;
+}
+
+form {
+  display: grid;
+  gap: 18px;
 }
 
 .modal-actions {
@@ -110,6 +140,10 @@
 }
 
 @media (max-width: 520px) {
+  .date-grid {
+    grid-template-columns: 1fr;
+  }
+
   .modal-actions > .button {
     width: 100%;
   }

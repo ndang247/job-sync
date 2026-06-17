@@ -3,6 +3,25 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { TestBed } from '@angular/core/testing';
 import { ApplicationsService, JobApplication } from './applications';
 
+const connectionMock = {
+  on: vi.fn(),
+  start: vi.fn(() => Promise.resolve()),
+  invoke: vi.fn(() => Promise.resolve()),
+  stop: vi.fn(() => Promise.resolve()),
+};
+
+vi.mock('@microsoft/signalr', () => ({
+  HubConnectionBuilder: vi.fn(function (this: {
+    withUrl: ReturnType<typeof vi.fn>;
+    withAutomaticReconnect: ReturnType<typeof vi.fn>;
+    build: ReturnType<typeof vi.fn>;
+  }) {
+    this.withUrl = vi.fn().mockReturnThis();
+    this.withAutomaticReconnect = vi.fn().mockReturnThis();
+    this.build = vi.fn(() => connectionMock);
+  }),
+}));
+
 describe('ApplicationsService', () => {
   const application: JobApplication = {
     id: 'app-1',
@@ -19,6 +38,7 @@ describe('ApplicationsService', () => {
 
   beforeEach(() => {
     localStorage.clear();
+    vi.clearAllMocks();
 
     TestBed.configureTestingModule({
       providers: [provideHttpClient(), provideHttpClientTesting()],
@@ -186,5 +206,32 @@ describe('ApplicationsService', () => {
     expect(service.deleteInProgress()).toBe(false);
     expect(service.deleteModalOpen()).toBe(true);
     expect(service.deleteError()).toBe('Could not delete this application. Try again.');
+  });
+
+  it('posts the selected sync date range when starting a sync', async () => {
+    service.accounts.set([{ id: 'account-1', label: 'jobs@example.com' }]);
+
+    const syncPromise = service.runSync('account-1', {
+      startDate: '2026-06-01',
+      endDate: '2026-06-17',
+      timeZone: 'Australia/Sydney',
+    });
+    await Promise.resolve();
+
+    const request = http.expectOne('http://localhost:5084/api/v1/sync');
+    expect(request.request.method).toBe('POST');
+    expect(request.request.body).toEqual({
+      emailConnectionId: 'account-1',
+      dateRange: {
+        startDate: '2026-06-01',
+        endDate: '2026-06-17',
+        timeZone: 'Australia/Sydney',
+      },
+    });
+
+    request.flush({ jobId: 'job-1' });
+    await syncPromise;
+
+    expect(connectionMock.invoke).toHaveBeenCalledWith('JoinJob', 'job-1');
   });
 });
